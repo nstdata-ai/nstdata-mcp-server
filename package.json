@@ -1,0 +1,54 @@
+{
+  "name": "@nstdata-ai/mcp-server",
+  "version": "1.0.1",
+  "description": "MCP access to Nstdata web data capabilities",
+  "type": "module",
+  "main": "dist/server.js",
+  "types": "dist/server.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    }
+  },
+  "bin": {
+    "nstdata-mcp-server": "dist/stdio.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "README_zh.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "docs"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": "^22.18.0 || ^24.0.0"
+  },
+  "scripts": {
+    "build": "node --input-type=module -e \"import {rmSync} from 'node:fs'; rmSync('dist',{recursive:true,force:true});\" && tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "check:package": "node scripts/check-package.mjs",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.3.1",
+    "@nstdata-ai/crawl": "2.0.0",
+    "zod": "4.6.7",
+    "@nstdata-ai/proxy-checker": "1.1.0"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.3.1",
+    "@modelcontextprotocol/core": "2.3.1",
+    "@types/node": "22.18.0",
+    "typescript": "5.9.3"
+  },
+  "keywords": [
+    "mcp",
+    "nstdata",
+    "crawl"
+  ]
+}
