@@ -41,6 +41,14 @@ Sync and result-query outputs retain `id` when supplied by the service. Query ou
 
 Call `nstdata_crawl_start` with an explicit `maxPages`. Save its `id` and pass it as `crawlId` to `nstdata_crawl_status` and `nstdata_crawl_pages`.
 
+For example, collect the Quotes homepage and its second page:
+
+```json
+{"name":"nstdata_crawl_start","arguments":{"url":"https://quotes.toscrape.com/","formats":["markdown"],"maxPages":2,"maxDepth":1,"includeUrls":["/page/2/"],"options":{"onlyMainContent":false}}}
+```
+
+Use paths to select discovered links; submit the seed separately as `url`. Adding `/` to the filter can admit other paths. In this example, `onlyMainContent: true` returned only the seed, while `false` collected both pages. Full-page output can include navigation. Filter semantics are service-specific, and `maxPages` is an upper bound: verify the returned URLs, not just task completion or page count.
+
 Page inputs accept `limit` (1–100, default 10) and one of `afterCursor`/`beforeCursor`. Copy `nextCursor` or `prevCursor` unchanged. An empty page with a cursor is not the end; stop on repeated cursors or the caller's page/call limit. Aggregate completion does not mean every page succeeded.
 
 ### Read a reference
