@@ -17,6 +17,8 @@ export function toolError(code: string, message: string, details: Record<string,
 }
 
 export async function guard(ctx: ServerContext, config: Config, operation: (options: RequestOptions) => Promise<CallToolResult>, operationKind: 'request' | 'task' = 'request'): Promise<CallToolResult> {
+    const unknownSubmission = operationKind === 'task'
+        ? ' The submission outcome is unknown; a remote task may still exist. Review it before submitting again.' : '';
     const controller = new AbortController();
     const abort = () => controller.abort(new DOMException('Local request cancelled', 'AbortError'));
     if (ctx.mcpReq.signal.aborted) abort();
@@ -26,7 +28,7 @@ export async function guard(ctx: ServerContext, config: Config, operation: (opti
     catch (error) {
         if (error instanceof ToolFailure) return toolError(error.code, error.message, error.details);
         if (error instanceof NstDataApiError && error.message === 'Response exceeds configured maxResponseBytes') {
-            return toolError('RESPONSE_LIMIT', 'The response exceeds the configured byte limit. No automatic retry was performed.');
+            return toolError('RESPONSE_LIMIT', 'The response exceeds the configured byte limit. No automatic retry was performed.' + unknownSubmission);
         }
         if (controller.signal.aborted || (error instanceof Error && error.name === 'TimeoutError') ||
             (error instanceof ProxyTransportError && ['TIMEOUT', 'CANCELLED'].includes(error.code))) {
@@ -40,7 +42,9 @@ export async function guard(ctx: ServerContext, config: Config, operation: (opti
         const classification = statusCode !== undefined && statusCode >= 400 ? statusCode : apiCode;
         const code = classification === 401 || classification === 403 ? 'AUTHORIZATION_FAILED'
             : classification === 429 ? 'RATE_LIMITED' : 'UPSTREAM_ERROR';
-        return toolError(code, 'The request failed. No automatic retry was performed.', { statusCode, apiCode });
+        const message = 'The request failed. No automatic retry was performed.'
+            + (code === 'UPSTREAM_ERROR' && !(classification !== undefined && classification >= 400 && classification < 500) ? unknownSubmission : '');
+        return toolError(code, message, { statusCode, apiCode });
     } finally {
         clearTimeout(timer);
         ctx.mcpReq.signal.removeEventListener('abort', abort);

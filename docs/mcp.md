@@ -110,6 +110,8 @@ Task `failed`/`expired` or `success: false` sets `isError`; page failures remain
 
 No request is automatically retried. An uncertain submission without an ID requires review, not another creation. A failed read does not create or cancel a task.
 
+For task submissions, a connection failure, server error or unreadable/oversized response can leave the outcome unknown even when no ID was received. The error message identifies this uncertainty; check the service task history before submitting again. Authentication and rate-limit rejections remain distinct from unknown outcomes.
+
 `OUTPUT_LIMIT` is not a download continuation API. Inline-only content may have no reference; an ID alone does not make it chunkable. Configured credentials are filtered from display text and checked in decoded binary bytes, including nested inline envelopes; binary payloads are kept valid or withheld. Other website secrets are not automatically detected. Raw HTTP bodies and transport messages are omitted from request errors.
 
 API/storage redirects are refused, including same-origin redirects. Configure a verified final API origin rather than following Location. For Proxy failures and limits, see [proxy.md](proxy.md).
