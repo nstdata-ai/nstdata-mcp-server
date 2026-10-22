@@ -49,7 +49,7 @@ For example, collect the Quotes homepage and its second page:
 
 Use paths to select discovered links; submit the seed separately as `url`. Adding `/` to the filter can admit other paths. In this example, `onlyMainContent: true` returned only the seed, while `false` collected both pages. Full-page output can include navigation. Filter semantics are service-specific, and `maxPages` is an upper bound: verify the returned URLs, not just task completion or page count.
 
-Page inputs accept `limit` (1–100, default 10) and one of `afterCursor`/`beforeCursor`. Copy `nextCursor` or `prevCursor` unchanged. An empty page with a cursor is not the end; stop on repeated cursors or the caller's page/call limit. Aggregate completion does not mean every page succeeded.
+Page inputs accept `limit` (1–100, default 10) and one of `afterCursor`/`beforeCursor`. Copy `nextCursor` or `prevCursor` unchanged. An empty page with a cursor is not the end; stop on repeated cursors or the caller's page/call limit. Aggregate completion does not mean every page succeeded. If a page list exceeds the output limit, repeat that read from the same input cursor with a smaller `limit` (down to 1), then continue using the successful response's cursor. Advancing past a withheld page would skip unread results.
 
 ### Read a reference
 
@@ -118,7 +118,7 @@ Task `failed`/`expired` or `success: false` sets `isError`; page failures remain
 
 No request is automatically retried. An uncertain submission without an ID requires review, not another creation. A failed read does not create or cancel a task.
 
-For task submissions, a connection failure, server error or unreadable/oversized response can leave the outcome unknown even when no ID was received. The error message identifies this uncertainty; check the service task history before submitting again. Authentication and rate-limit rejections remain distinct from unknown outcomes.
+For task submissions, a connection failure, server error or unreadable/oversized response can leave the outcome unknown even when no ID was received. The error message identifies this uncertainty; check the service task history before submitting again. Successful async acknowledgements must contain an ID accepted by the result-query tools; a missing or unusable ID is an unknown outcome. Explicit task failures and synchronous content without a diagnostic ID remain distinct. Authentication and rate-limit rejections remain distinct from unknown outcomes.
 
 `OUTPUT_LIMIT` is not a download continuation API. Inline-only content may have no reference; an ID alone does not make it chunkable. Configured credentials are filtered from display text and checked in decoded binary bytes, including nested inline envelopes; binary payloads are kept valid or withheld. Other website secrets are not automatically detected. Raw HTTP bodies and transport messages are omitted from request errors.
 

@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { guard } from '../shared/errors.js';
 import { type Config } from '../config.js';
 import { httpURL, identifier, formats, scrapeOptions } from './crawl-schema.js';
-import { serializeData, taskFailed } from './crawl-result.js';
+import { serializeData, taskFailed, requireSubmissionId } from './crawl-result.js';
 
 export function registerCrawlTools(server: McpServer, client: NstDataClient, config: Config): void {
     server.registerTool('nstdata_crawl_read_result', {
@@ -29,6 +29,7 @@ export function registerCrawlTools(server: McpServer, client: NstDataClient, con
     }, async (args, ctx) => guard(ctx, config, async options => {
         const { options: advanced, ...request } = args;
         const output = await client.submitCrawlTask({ ...request, ...advanced }, options);
+        requireSubmissionId(output);
         return { content: [{ type: 'text', text: JSON.stringify(output) }], structuredContent: { ...output }, isError: taskFailed(output) };
     }, 'task'));
     server.registerTool('nstdata_crawl_status', {
@@ -62,6 +63,7 @@ export function registerCrawlTools(server: McpServer, client: NstDataClient, con
         const request = { ...common, ...advanced };
         if (mode === 'async') {
             const submitted = await client.submitScrapeTask(request, options);
+            requireSubmissionId(submitted);
             return { content: [{ type: 'text', text: JSON.stringify(submitted) }], structuredContent: { ...submitted }, isError: taskFailed(submitted) };
         }
         const result = await client.submitScrapeTaskSync(request, options);

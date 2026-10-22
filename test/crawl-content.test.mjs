@@ -139,3 +139,33 @@ test('untrusted encoding-shaped metadata cannot bypass configured credential fil
         assert.ok(!JSON.stringify(result).includes(token));
     }
 });
+
+test('an oversized page-list read can resume from the same position with smaller pages', { timeout: 10000 }, async t => {
+    const rows = ['https://example.com/', 'https://example.com/page/2/'].map((url, index) => ({
+        url, taskId: `page-${index}`, status: 'completed', success: true,
+        data: { markdownRef: `reference-${index}`, links: Array(70).fill('https://example.com/link') },
+    }));
+    const h = await harness(t, (req, res) => {
+        const url = new URL(req.url, 'http://localhost');
+        const start = url.searchParams.get('after_cursor') === 'second-row' ? 1 : 0;
+        const limit = Number(url.searchParams.get('limit'));
+        json(res, envelope({ total: 2, data: rows.slice(start, start + limit),
+            ...(start + limit < rows.length ? { nextCursor: 'second-row' } : {}) }));
+    }, { NSTDATA_MAX_OUTPUT_CHARS: '4000' });
+    const large = await h.client.callTool({ name: 'nstdata_crawl_pages', arguments: { crawlId: 'existing', limit: 2 } });
+    assert.equal(large.structuredContent.error.code, 'OUTPUT_LIMIT');
+    assert.equal(large.structuredContent.error.recovery.crawlId, 'existing');
+    const first = await h.client.callTool({ name: 'nstdata_crawl_pages', arguments: { crawlId: 'existing', limit: 1 } });
+    assert.notEqual(first.isError, true);
+    assert.ok(first.content[0].text.length <= 4000);
+    assert.equal(first.structuredContent.data[0].url, rows[0].url);
+    const second = await h.client.callTool({ name: 'nstdata_crawl_pages', arguments: {
+        crawlId: 'existing', limit: 1, afterCursor: first.structuredContent.nextCursor,
+    } });
+    assert.notEqual(second.isError, true);
+    assert.ok(second.content[0].text.length <= 4000);
+    assert.equal(second.structuredContent.data[0].url, rows[1].url);
+    assert.equal(second.structuredContent.nextCursor, undefined);
+    assert.equal(h.requests.length, 3);
+    assert.ok(h.requests.every(request => request.method === 'GET' && !request.url.includes('/storage/')));
+});

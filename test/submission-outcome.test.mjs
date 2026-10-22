@@ -42,3 +42,37 @@ test('read failures and rejected credentials do not claim an unknown submission'
     assert.doesNotMatch(denied.structuredContent.error.message, /submission outcome|remote task/i);
     assert.equal(h.requests.length, 2);
 });
+
+test('async acknowledgements require a reusable ID while explicit failures and sync content remain valid', { timeout: 10000 }, async t => {
+    let response;
+    const h = await harness(t, (_req, res) => json(res, { code: 200, err: false, data: response }));
+    for (const id of [undefined, null, '', '   ', ' padded ', 42, 'x'.repeat(257)]) {
+        response = { id, status: 'processing' };
+        for (const request of submissions.slice(1)) {
+            const before = h.requests.length;
+            const result = await h.client.callTool(request);
+            assert.equal(result.isError, true);
+            assert.equal(result.structuredContent.error.code, 'UPSTREAM_ERROR');
+            assert.match(result.structuredContent.error.message, /submission outcome is unknown/i);
+            assert.equal(h.requests.length, before + 1);
+        }
+    }
+    for (const failure of [{ status: 'failed' }, { status: 'expired' }, { success: false }]) {
+        response = failure;
+        for (const request of submissions.slice(1)) {
+            const result = await h.client.callTool(request);
+            assert.equal(result.isError, true);
+            assert.deepEqual(result.structuredContent, failure);
+        }
+    }
+    response = { status: 'completed', success: true, data: { markdown: '# Completed without diagnostic ID' } };
+    const sync = await h.client.callTool(submissions[0]);
+    assert.notEqual(sync.isError, true);
+    assert.equal(sync.structuredContent.data.markdown, response.data.markdown);
+    response = { id: 'valid-task', status: 'processing' };
+    for (const request of submissions.slice(1)) {
+        const result = await h.client.callTool(request);
+        assert.notEqual(result.isError, true);
+        assert.equal(result.structuredContent.id, 'valid-task');
+    }
+});

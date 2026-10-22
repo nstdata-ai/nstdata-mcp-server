@@ -139,14 +139,14 @@ try {
         cwd: root, encoding: 'utf8', timeout: 15000,
         env: { ...process.env, NSTDATA_TEST_CLI: installedCli },
     });
-    assert.match(submissionChecks, /# pass 6\b/);
+    assert.match(submissionChecks, /# pass 7\b/);
     assert.match(submissionChecks, /# fail 0\b/);
     const contentChecks = execFileSync(process.execPath, ['--test', '--test-reporter=tap',
         path.join(root, 'test/crawl-content.test.mjs')], {
         cwd: root, encoding: 'utf8', timeout: 30000,
         env: { ...process.env, NSTDATA_TEST_CLI: installedCli },
     });
-    assert.match(contentChecks, /# pass 9\b/);
+    assert.match(contentChecks, /# pass 10\b/);
     assert.match(contentChecks, /# fail 0\b/);
     const interruptionChecks = execFileSync(process.execPath, ['--test', '--test-reporter=tap',
         path.join(root, 'test/interruption.test.mjs')], {

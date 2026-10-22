@@ -2,7 +2,7 @@
 
 ## 1.0.1 — Unreleased
 
-- Identify unknown submission outcomes after connection failures, server errors and unreadable or oversized acknowledgements; never retry automatically.
+- Identify unknown submission outcomes after connection failures, server errors and unreadable, oversized or unusable async acknowledgements; never retry automatically.
 - Reuse proxy-checker 1.1.0's transport instead of maintaining a transport inside MCP.
 - Preserve eight tool names, result schemas, configuration, credential filtering and output limits.
 - Align Crawl input validation with the API: JS wait is 1000–30000 ms, upstream timeout is 1000–60000 ms, and scroll coordinates are integers. Reject invalid values before submitting tasks; action wait limits remain unchanged.

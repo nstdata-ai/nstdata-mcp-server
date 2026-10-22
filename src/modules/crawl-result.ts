@@ -1,8 +1,15 @@
-import { type ScrapeDataDto, type RequestOptions } from '@nstdata-ai/crawl';
+import { NstDataApiError, type ScrapeDataDto, type RequestOptions } from '@nstdata-ai/crawl';
 import { binaryContent } from '../shared/output.js';
+import { identifier } from './crawl-schema.js';
 
 export function taskFailed(result: { status?: string; success?: boolean }): boolean {
     return result.success === false || result.status === 'failed' || result.status === 'expired';
+}
+
+export function requireSubmissionId(result: { id?: string; status?: string; success?: boolean }): void {
+    if (taskFailed(result)) return;
+    const parsed = identifier.safeParse(result.id);
+    if (!parsed.success || parsed.data !== result.id) throw new NstDataApiError('API error: unusable submission ID');
 }
 
 /** References stay lazy; only read_result downloads storage content. */
