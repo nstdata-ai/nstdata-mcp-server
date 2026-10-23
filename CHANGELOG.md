@@ -2,6 +2,7 @@
 
 ## 1.0.1 — Unreleased
 
+- Withhold results whose property names contain configured credentials; reject malformed UTF-8 in text references and Proxy fetches without changing binary bytes.
 - Identify unknown submission outcomes after connection failures, server errors and unreadable, oversized or unusable async acknowledgements; never retry automatically.
 - Reuse proxy-checker 1.1.0's transport instead of maintaining a transport inside MCP.
 - Preserve eight tool names, result schemas, configuration, credential filtering and output limits.

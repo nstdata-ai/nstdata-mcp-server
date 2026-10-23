@@ -140,6 +140,42 @@ test('untrusted encoding-shaped metadata cannot bypass configured credential fil
     }
 });
 
+test('credential-bearing property names withhold results without renaming keys', { timeout: 10000 }, async t => {
+    const h = await harness(t, (req, res) => {
+        const data = { metadata: { nested: [{ 'prefix-fixture-token-suffix': { count: 1 } }] } };
+        json(res, envelope(req.url.split('?')[0].endsWith('/pages') ? { data: [{ data }] } : { success: true, data }));
+    }, {}, 'legacy', executable);
+    for (const request of [
+        { name: 'nstdata_crawl_scrape', arguments: { url: 'https://example.com' } },
+        { name: 'nstdata_crawl_scrape_result', arguments: { taskId: 'existing' } },
+        { name: 'nstdata_crawl_pages', arguments: { crawlId: 'existing' } },
+    ]) {
+        const result = await h.client.callTool(request);
+        assert.equal(result.isError, true);
+        assert.equal(result.structuredContent.error.code, 'SENSITIVE_OUTPUT');
+        assert.deepEqual(JSON.parse(result.content[0].text), result.structuredContent);
+        assert.doesNotMatch(JSON.stringify(result), /fixture-token|count/);
+    }
+    assert.equal(h.requests.length, 3);
+});
+
+test('invalid UTF-8 references fail as text and remain lossless as binary', { timeout: 10000 }, async t => {
+    const bytes = Buffer.from([0x61, 0xff, 0x62]);
+    const h = await harness(t, (_req, res) => res.end(bytes), {}, 'legacy', executable);
+    for (const format of ['markdown', 'html']) {
+        const result = await h.client.callTool({ name: 'nstdata_crawl_read_result', arguments: { ref: 'existing', format, length: 1 } });
+        assert.equal(result.isError, true);
+        assert.equal(result.structuredContent.error.code, 'INVALID_RESPONSE');
+        assert.doesNotMatch(JSON.stringify(result), /�/);
+    }
+    const binary = await h.client.callTool({ name: 'nstdata_crawl_read_result', arguments: { ref: 'existing', format: 'rawData' } });
+    assert.notEqual(binary.isError, true);
+    assert.deepEqual(Buffer.from(binary.structuredContent.base64, 'base64'), bytes);
+    assert.equal(binary.structuredContent.total, bytes.length);
+    assert.equal(h.requests.length, 3);
+    assert.ok(h.requests.every(request => request.method === 'GET' && request.url.includes('/storage/read')));
+});
+
 test('an oversized page-list read can resume from the same position with smaller pages', { timeout: 10000 }, async t => {
     const rows = ['https://example.com/', 'https://example.com/page/2/'].map((url, index) => ({
         url, taskId: `page-${index}`, status: 'completed', success: true,

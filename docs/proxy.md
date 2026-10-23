@@ -27,7 +27,7 @@ Each call uses one connection lifetime. There is no redirect following, automati
 
 Proxy Basic credentials are sent only to the gateway. Target headers may include Authorization/Cookie; send them only to trusted targets. Reserved host/connection/framing/proxy-auth headers and invalid header names/values are rejected. Limits are 100 headers, 256 characters per name, 8192 per value and 8192 per URL.
 
-Response headers, including CONNECT, are capped at 16 KiB. Transferred and decompressed bodies each obey `NSTDATA_MAX_RESPONSE_BYTES`. Gzip/deflate/br are decoded; invalid or unsupported encodings fail. Text is UTF-8, and base64 represents decoded body bytes. Network/TLS/framing overhead is not included in the body limit.
+Response headers, including CONNECT, are capped at 16 KiB. Transferred and decompressed bodies each obey `NSTDATA_MAX_RESPONSE_BYTES`. Gzip/deflate/br are decoded; invalid or unsupported encodings fail. Text must be valid UTF-8 or the tool returns `INVALID_RESPONSE`; base64 preserves decoded body bytes. Network/TLS/framing overhead is not included in the body limit.
 
 Output follows [shared MCP limits](mcp.md#configuration). An oversized Proxy response has no storage reference or local continuation. Use a smaller source response, a target-supported Range request, or an appropriate output limit.
 

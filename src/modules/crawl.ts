@@ -1,7 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { NstDataClient } from '@nstdata-ai/crawl';
 import { z } from 'zod';
-import { guard } from '../shared/errors.js';
+import { isUtf8 } from 'node:buffer';
+import { guard, ToolFailure } from '../shared/errors.js';
 import { type Config } from '../config.js';
 import { httpURL, identifier, formats, scrapeOptions } from './crawl-schema.js';
 import { serializeData, taskFailed, requireSubmissionId } from './crawl-result.js';
@@ -14,6 +15,7 @@ export function registerCrawlTools(server: McpServer, client: NstDataClient, con
     }, async (args, ctx) => guard(ctx, config, async options => {
         const bytes = Buffer.from(await client.readStorage(args.ref, options));
         const isText = args.format === 'markdown' || args.format === 'html';
+        if (isText && !isUtf8(bytes)) throw new ToolFailure('INVALID_RESPONSE', 'The reference is not valid UTF-8. No text was returned.');
         const points = isText ? Array.from(bytes.toString('utf8')) : undefined;
         const total = points?.length ?? bytes.length;
         const end = Math.min(args.offset + args.length, total);

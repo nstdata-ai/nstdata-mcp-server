@@ -1,9 +1,10 @@
 import { type McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { isIP } from 'node:net';
+import { isUtf8 } from 'node:buffer';
 import { validateHeaderName, validateHeaderValue } from 'node:http';
 import { type Config } from '../config.js';
-import { guard } from '../shared/errors.js';
+import { guard, ToolFailure } from '../shared/errors.js';
 import { createProxyTransport } from '@nstdata-ai/proxy-checker/transport';
 
 const reservedHeaders = new Set(['host', 'connection', 'proxy-authorization', 'proxy-authenticate', 'proxy-connection', 'transfer-encoding', 'content-length', 'upgrade', 'te', 'trailer', 'keep-alive']);
@@ -32,6 +33,7 @@ export function registerProxyTools(server: McpServer, config: Config): void {
         annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
     }, async (args, ctx) => guard(ctx, config, async options => {
         const response = await transport.request(args, { signal: options.signal });
+        if (args.format === 'text' && !isUtf8(response.body)) throw new ToolFailure('INVALID_RESPONSE', 'The response is not valid UTF-8. Use base64 to read binary content.');
         const output = { statusCode: response.statusCode, encoding: args.format === 'text' ? 'utf-8' : 'base64',
             body: response.body.toString(args.format === 'text' ? 'utf8' : 'base64'),
             headers: { 'content-type': response.headers['content-type'], location: response.headers.location, 'retry-after': response.headers['retry-after'] } };

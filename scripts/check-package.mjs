@@ -146,7 +146,7 @@ try {
         cwd: root, encoding: 'utf8', timeout: 30000,
         env: { ...process.env, NSTDATA_TEST_CLI: installedCli },
     });
-    assert.match(contentChecks, /# pass 10\b/);
+    assert.match(contentChecks, /# pass 12\b/);
     assert.match(contentChecks, /# fail 0\b/);
     const interruptionChecks = execFileSync(process.execPath, ['--test', '--test-reporter=tap',
         path.join(root, 'test/interruption.test.mjs')], {

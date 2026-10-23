@@ -63,6 +63,19 @@ test('deflate/br content decodes and invalid or unknown encodings fail explicitl
     }
 });
 
+test('Proxy fetch rejects invalid UTF-8 text without corrupting binary bytes', { timeout: 10000 }, async t => {
+    const bytes = Buffer.from([0x61, 0xff, 0x62]);
+    const h = await harness(t, (_req, res) => res.end(bytes), settings);
+    const text = await h.client.callTool({ name: 'nstdata_proxy_fetch', arguments: { url: 'http://target.invalid' } });
+    assert.equal(text.isError, true);
+    assert.equal(text.structuredContent.error.code, 'INVALID_RESPONSE');
+    assert.doesNotMatch(JSON.stringify(text), /�/);
+    const binary = await h.client.callTool({ name: 'nstdata_proxy_fetch', arguments: { url: 'http://target.invalid', format: 'base64' } });
+    assert.notEqual(binary.isError, true);
+    assert.deepEqual(Buffer.from(binary.structuredContent.body, 'base64'), bytes);
+    assert.equal(h.requests.length, 2);
+});
+
 test('Crawl-only ignores disabled Proxy credentials, including an invalid CA path', { timeout: 10000 }, async t => {
     const h = await harness(t, (_req, res) => res.end(), { NSTDATA_PROXY_URL: 'not-a-url', NSTDATA_PROXY_CA_FILE: '/nonexistent/fixture-password' });
     assert.equal((await h.client.listTools()).tools.length, 6);

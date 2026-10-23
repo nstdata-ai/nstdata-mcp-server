@@ -24,6 +24,7 @@ export function boundResult(result: CallToolResult, config: Config): CallToolRes
     const opaqueFields = new Set(['encoding', 'format', 'unit', 'status', 'id', 'taskId', 'crawlId', 'ref', 'markdownRef', 'htmlRef', 'pdfRef', 'screenshotRef', 'rawDataRef', 'nextCursor', 'prevCursor', 'errorCode']);
     let sensitive = false;
     const text = JSON.stringify(original, function (key, value: unknown) {
+        if (!(this[inlineBinary] === true && (key === 'encoding' || key === 'base64')) && knownSecrets.some(secret => key.includes(secret))) sensitive = true;
         if (typeof value !== 'string') return value;
         if (this === original && literalFields.has(key) && literals.has(value)) return value;
         if (this[inlineBinary] === true && key === 'encoding') return value;
@@ -37,7 +38,7 @@ export function boundResult(result: CallToolResult, config: Config): CallToolRes
         return filtered;
     });
     if (sensitive) {
-        const output = { error: { code: 'SENSITIVE_OUTPUT', message: 'Sensitive binary content or an opaque identifier was withheld instead of corrupting its value.' } };
+        const output = { error: { code: 'SENSITIVE_OUTPUT', message: 'A result containing configured credentials was withheld to preserve its structure and bytes.' } };
         return { isError: true, content: [{ type: 'text', text: JSON.stringify(output) }], structuredContent: output };
     }
     const data = JSON.parse(text) as Record<string, unknown>;

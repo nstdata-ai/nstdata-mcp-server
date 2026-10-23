@@ -61,7 +61,7 @@ Pass the value of `data.markdownRef` as **`ref`**, with `format: "markdown"`:
 
 Use the same mapping for htmlRef→html, pdfRef→pdf, screenshotRef→screenshot and rawDataRef→rawData. References are opaque values, not public URLs. Only read references from an authorized task.
 
-`length` is 1–4000, default 2000. Text uses Unicode code-point offsets and UTF-8; binary uses byte offsets and base64 output. Continue at `nextOffset` until absent. Decode binary chunks separately before joining bytes. Every call downloads the full reference within the response cap, then slices locally; this is not HTTP Range or persistent caching.
+`length` is 1–4000, default 2000. Text uses Unicode code-point offsets and UTF-8; invalid UTF-8 fails with `INVALID_RESPONSE` before slicing. Binary uses byte offsets and base64 output. Continue at `nextOffset` until absent. Decode binary chunks separately before joining bytes. Every call downloads the full reference within the response cap, then slices locally; this is not HTTP Range or persistent caching.
 
 ## Options
 
@@ -113,13 +113,14 @@ Task `failed`/`expired` or `success: false` sets `isError`; page failures remain
 | `UPSTREAM_ERROR` | Request/response failure; optional `statusCode` and `apiCode` are separate. A 3xx status is a refused redirect |
 | `TIMEOUT`, `CANCELLED` | Local waiting stopped; submitted remote tasks may still run |
 | `RESPONSE_LIMIT` | A response exceeded the download cap |
+| `INVALID_RESPONSE` | Invalid response content, including malformed UTF-8 in a text reference |
 | `OUTPUT_LIMIT` | Serialized output exceeded the cap; use smaller pages/chunks or actual identifiers in `error.recovery` |
-| `SENSITIVE_OUTPUT` | Binary content or an opaque identifier could not be returned safely and was withheld |
+| `SENSITIVE_OUTPUT` | A credential matched a property name, binary content or an opaque identifier; the result was withheld |
 
 No request is automatically retried. An uncertain submission without an ID requires review, not another creation. A failed read does not create or cancel a task.
 
 For task submissions, a connection failure, server error or unreadable/oversized response can leave the outcome unknown even when no ID was received. The error message identifies this uncertainty; check the service task history before submitting again. Successful async acknowledgements must contain an ID accepted by the result-query tools; a missing or unusable ID is an unknown outcome. Explicit task failures and synchronous content without a diagnostic ID remain distinct. Authentication and rate-limit rejections remain distinct from unknown outcomes.
 
-`OUTPUT_LIMIT` is not a download continuation API. Inline-only content may have no reference; an ID alone does not make it chunkable. Configured credentials are filtered from display text and checked in decoded binary bytes, including nested inline envelopes; binary payloads are kept valid or withheld. Other website secrets are not automatically detected. Raw HTTP bodies and transport messages are omitted from request errors.
+`OUTPUT_LIMIT` is not a download continuation API. Inline-only content may have no reference; an ID alone does not make it chunkable. Configured credentials are filtered from display text and checked in property names and decoded binary bytes, including nested inline envelopes. Matching names, opaque identifiers and binary payloads are withheld rather than altered; short credentials can also match ordinary field names. Other website secrets are not automatically detected. Raw HTTP bodies and transport messages are omitted from request errors.
 
 API/storage redirects are refused, including same-origin redirects. Configure a verified final API origin rather than following Location. For Proxy failures and limits, see [proxy.md](proxy.md).
