@@ -1,5 +1,7 @@
 # MCP client setup and Crawl reference
 
+[中文](mcp_zh.md) · [Quick start](../README.md)
+
 ## Client setup
 
 Install the packages and use the stdio template in [README.md](../README.md).
@@ -24,6 +26,19 @@ Crawl-only exposes six tools, Proxy-only two, and both modules eight. Verify too
 | `NSTDATA_MAX_CRAWL_PAGES` | `10` | Integer 1–1000; default and maximum accepted `maxPages` |
 
 Proxy-specific variables and behavior are defined in [proxy.md](proxy.md). Disabled modules do not require their credentials.
+
+## Tool reference
+
+| Tool | Required input | Operation and result |
+|---|---|---|
+| `nstdata_crawl_scrape` | `url` | One sync/async single-page submission; returns status/content or an ID |
+| `nstdata_crawl_scrape_result` | `taskId` | One result query; retains status and available content/references |
+| `nstdata_crawl_start` | `url` | One bounded site submission; returns its actual ID |
+| `nstdata_crawl_status` | `crawlId` | One aggregate progress query; does not poll |
+| `nstdata_crawl_pages` | `crawlId` | One page of results with actual cursors and per-page status |
+| `nstdata_crawl_read_result` | `ref`, `format` | One bounded reference download and local chunk selection |
+
+Submission tools create potentially billable tasks. Reads may also consume service resources. Formats are `markdown` (default), `html`, `links`, `pdf`, `screenshot` and `rawData`; request 1–6 entries. Scrape `mode` defaults to `sync`; site page/depth controls do not apply to single-page scraping. Proxy tools are listed in [proxy.md](proxy.md#tools).
 
 ## Workflows
 
@@ -87,6 +102,10 @@ Common top-level inputs are `url`, `formats` and, for scrape, `mode`. Site trave
 | execute | execute | — |
 | screenshot | — | fullScreenshot, particularScreenshot |
 | waitForRequestCompletion | urlPattern | milliseconds |
+
+Action `milliseconds` values are integers from 0 to 600000; these are distinct from `jsRender.waitFor`.
+
+Cookie names are non-empty; values may be empty. Other cookie string fields, when supplied, are non-empty. Cookie strings are capped at 8192 characters.
 
 Other string inputs are capped: URL 8192, task/crawl ID 256, cursor 8192, storage reference 4096. Unknown fields are rejected. These are local input bounds, not promises about limits or behavior of the remote service.
 

@@ -17,6 +17,6 @@ After the checks pass, run `npm pack` to build `nstdata-ai-mcp-server-1.0.1.tgz`
 
 Cover observable tool inputs/results, failure/empty content, deadlines, cancellation, output limits, reference continuation and process cleanup. Keep stdout exclusively for MCP protocol traffic. Task creation must not gain automatic retries.
 
-Update both READMEs and the relevant reference document when public behavior changes. Keep credentials and raw private responses out of examples, fixtures and errors. Package checks install the locked graph outside the source tree, then install the tarball without modifying that lock, verify dependency versions/integrities and validate installed tools, types and configuration templates. They require the complete cache prepared by source installation.
+Update both READMEs and both language versions of the relevant reference document when public behavior changes. Keep credentials and raw private responses out of examples, fixtures and errors. Package checks install the locked graph outside the source tree, then install the tarball without modifying that lock, verify dependency versions/integrities and validate installed tools, types, configuration templates, packaged links and documented workflows. The entire test suite also runs against the installed CLI, including lifecycle and interrupted-request cases. They require the complete cache prepared by source installation.
 
 Verify license ownership, dependency availability, compatibility and maintainer authorization before publishing.

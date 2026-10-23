@@ -244,3 +244,24 @@ test('proxy-only discovers two tools and forwards a GET with gateway-only Basic 
     assert.equal(h.requests[0].headers['x-api-key'], undefined);
     assert.equal(h.stderr(), '');
 });
+
+for (const era of ['legacy', 'modern']) {
+    test(`${era} Proxy check recognizes successful Nstdata client-IP envelopes in one request`, { timeout: 10000 }, async t => {
+        let value = { code: 200, err: false, data: { ip: '203.0.113.9' } };
+        const h = await harness(t, (_req, res) => res.end(JSON.stringify(value)), settings, era);
+        const success = await h.client.callTool({ name: 'nstdata_proxy_check', arguments: {} });
+        assert.equal(success.isError, false);
+        assert.equal(success.structuredContent.observedIp, '203.0.113.9');
+        assert.equal(h.requests.length, 1);
+        for (const invalid of [
+            { code: 400, err: false, data: { ip: '203.0.113.9' } },
+            { code: 200, err: true, data: { ip: '203.0.113.9' } },
+            { code: 200, err: false, data: { ip: 'nstdata.io' } },
+        ]) {
+            value = invalid;
+            const result = await h.client.callTool({ name: 'nstdata_proxy_check', arguments: {} });
+            assert.equal(result.structuredContent.observedIp, undefined);
+        }
+        assert.equal(h.requests.length, 4);
+    });
+}

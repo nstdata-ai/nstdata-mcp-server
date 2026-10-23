@@ -49,7 +49,10 @@ export function registerProxyTools(server: McpServer, config: Config): void {
         const response = await transport.request({ url: config.proxyCheckURL!, method: 'GET' }, { signal: options.signal });
         const text = response.body.toString('utf8').trim();
         let address: unknown = text;
-        try { address = (JSON.parse(text) as { ip?: unknown } | null)?.ip; } catch { /* Plain IP responses are also supported. */ }
+        try {
+            const json = JSON.parse(text) as { ip?: unknown; code?: unknown; err?: unknown; data?: { ip?: unknown } } | null;
+            address = json?.ip ?? (json?.code === 200 && json?.err === false ? json.data?.ip : undefined);
+        } catch { /* Plain IP responses are also supported. */ }
         const output = { statusCode: response.statusCode, elapsedMs: performance.now() - started,
             observedIp: typeof address === 'string' && isIP(address) ? address : undefined };
         return { content: [{ type: 'text', text: JSON.stringify(output) }], structuredContent: output,

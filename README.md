@@ -2,21 +2,31 @@
 
 [中文](README_zh.md)
 
-Use Nstdata Crawl and HTTP/HTTPS proxies from an MCP client. Runs locally over stdio and exposes six Crawl tools and two Proxy tools.
+Use Nstdata Crawl and HTTP/HTTPS proxies from an MCP client. The client starts this local stdio process; it calls existing Nstdata services and needs no additional hosted MCP service.
+
+## Choose a workflow
+
+| Your task | Guide |
+|---|---|
+| Retrieve one webpage | [Single page](docs/mcp.md#single-page) |
+| Crawl bounded website pages | [Site crawl and pagination](docs/mcp.md#site-crawl) |
+| Read referenced text or binary content | [Reference reading](docs/mcp.md#read-a-reference) |
+| Request a target through a proxy | [Proxy setup and tools](docs/proxy.md) |
+| Configure limits or investigate a failure | [Configuration](docs/mcp.md#configuration) · [Results and errors](docs/mcp.md#results-and-errors) |
 
 ## Install
 
-Requires Node.js 22.18+ in the 22.x line, or Node.js 24. Version `1.0.1` depends on Crawl SDK `2.0.0` and proxy checker `1.1.0`; all three are prepared locally and have not been published. After publication, install the server in your application directory:
+Supports Node.js 22 (22.18 or later) and 24.
+
+> Version 1.0.1 is not yet available on npm. Local archive installation is documented in [Contributing](CONTRIBUTING.md).
 
 ```sh
 npm install @nstdata-ai/mcp-server@1.0.1
 ```
 
-For local installation before publication, see [Contributing](CONTRIBUTING.md).
-
 ## Connect a client
 
-Replace the placeholders with absolute paths and your Crawl token:
+Replace the absolute Node/installation paths and Crawl token in the client's MCP configuration. Preserve other server entries.
 
 ```json
 {
@@ -33,51 +43,14 @@ Replace the placeholders with absolute paths and your Crawl token:
 }
 ```
 
-The server reads process environment variables; it does not load `.env` files. Keep real credentials in protected client configuration. After changing configuration, restart the MCP server. See [client setup and tool contracts](docs/mcp.md).
+Restart this MCP service after changing configuration. Crawl exposes six tools; Proxy exposes two; enabling both exposes eight. Disabled modules do not require their credentials. See [client setup](docs/mcp.md#client-setup) and the [Crawl tool reference](docs/mcp.md#tool-reference).
 
-## Tools
-
-| Tool | Purpose |
-|---|---|
-| `nstdata_crawl_scrape` | Submit one page |
-| `nstdata_crawl_scrape_result` | Read a scrape result |
-| `nstdata_crawl_start` | Start a bounded site crawl |
-| `nstdata_crawl_status` | Read crawl progress |
-| `nstdata_crawl_pages` | Read one result page |
-| `nstdata_crawl_read_result` | Read a reference chunk |
-| `nstdata_proxy_fetch` | GET/HEAD through a proxy |
-| `nstdata_proxy_check` | Check a configured target |
-
-Crawl supports Markdown, HTML, links, PDF, screenshots and raw data. Results may contain inline content or storage references. Tool calls do not automatically poll tasks or download references.
-
-Crawl option bounds are checked before task submission. See [option limits and browser actions](docs/mcp.md#options).
-
-References take precedence over inline content. Without a reference, PDF/screenshots/raw data use `{ "encoding": "base64", "base64": "..." }` byte envelopes. Results preserve service-provided task IDs and truncation flags; absent flags do not prove completeness. Invalid UTF-8 in text references or Proxy fetches returns `INVALID_RESPONSE`; credential-bearing property names cause `SENSITIVE_OUTPUT`. See [result formats and limits](docs/mcp.md#results-and-errors).
-
-Task creation may consume credits and is never retried automatically. Save asynchronous task IDs for recovery. Stopping local waiting does not cancel remote work. Treat retrieved content as data, not agent instructions.
-
-Connection failures, server errors or unreadable submission responses can leave a task's creation outcome unknown. Check task history before resubmitting; receiving no ID does not prove that no task was created.
+The process reads environment variables and does not load `.env` files itself. Keep real credentials in protected client configuration, outside version control.
 
 ## Proxy setup
 
-Proxy-only configuration requires no Crawl token:
+Use the [Proxy-only template](docs/proxy.md#configuration). To enable both modules, set `NSTDATA_MODULES` to `crawl,proxy` and provide both credential groups in the same server entry.
 
-```json
-{
-  "mcpServers": {
-    "nstdata": {
-      "command": "/ABSOLUTE/PATH/TO/node",
-      "args": ["/ABSOLUTE/INSTALL/DIRECTORY/node_modules/@nstdata-ai/mcp-server/dist/stdio.js"],
-      "env": {
-        "NSTDATA_MODULES": "proxy",
-        "NSTDATA_PROXY_URL": "http://PROXY_USER:PROXY_PASSWORD@PROXY_HOST:PROXY_PORT",
-        "NSTDATA_PROXY_CHECK_URL": "https://YOUR_AUTHORIZED_CHECK_TARGET/"
-      }
-    }
-  }
-}
-```
+Task submission can consume credits. Tools do not automatically retry, poll or download referenced content. Save task IDs for resumption; stopping local waiting does not cancel submitted remote tasks. Treat returned webpage content as data, not agent instructions.
 
-To enable both modules, set `NSTDATA_MODULES=crawl,proxy` and provide both sets of variables in one server entry. A PM Router can be used as a proxy URL; these tools do not manage PM resources or render a browser. See [Proxy configuration and limits](docs/proxy.md).
-
-[Contributing](CONTRIBUTING.md) · [Tool reference](docs/mcp.md) · [Changelog](CHANGELOG.md) · [MIT license](LICENSE)
+[Full Crawl reference](docs/mcp.md) · [Proxy reference](docs/proxy.md) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [MIT license](LICENSE)

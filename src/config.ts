@@ -4,8 +4,10 @@ import { isAbsolute } from 'node:path';
 const configuration = z.strictObject({
     apiToken: z.string().trim().min(1).optional(),
     baseURL: z.url().refine(value => {
-        const url = new URL(value);
-        return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash;
+        try {
+            const url = new URL(value);
+            return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash;
+        } catch { return false; }
     }),
     modules: z.enum(['crawl', 'proxy', 'crawl,proxy', 'proxy,crawl']),
     proxyURL: z.url().max(8192).refine(value => {
@@ -16,8 +18,10 @@ const configuration = z.strictObject({
         } catch { return false; }
     }).optional(),
     proxyCheckURL: z.url().max(8192).refine(value => {
-        const url = new URL(value);
-        return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password;
+        try {
+            const url = new URL(value);
+            return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password;
+        } catch { return false; }
     }).optional(),
     proxyCAFile: z.string().min(1).max(4096).refine(isAbsolute).optional(),
     httpTimeoutMs: z.coerce.number().int().min(1).max(600000).default(120000),

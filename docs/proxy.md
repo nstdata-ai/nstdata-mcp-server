@@ -1,8 +1,28 @@
 # Proxy tools
 
+[中文](proxy_zh.md) · [Quick start](../README.md)
+
 ## Configuration
 
-Use the Proxy-only template in [README.md](../README.md#proxy-setup), or set `NSTDATA_MODULES=crawl,proxy` in the same server entry.
+Proxy-only requires no Crawl token. Replace the absolute paths and generated proxy connection in the client entry:
+
+```json
+{
+  "mcpServers": {
+    "nstdata": {
+      "command": "/ABSOLUTE/PATH/TO/node",
+      "args": ["/ABSOLUTE/INSTALL/DIRECTORY/node_modules/@nstdata-ai/mcp-server/dist/stdio.js"],
+      "env": {
+        "NSTDATA_MODULES": "proxy",
+        "NSTDATA_PROXY_URL": "http://PROXY_USER:PROXY_PASSWORD@PROXY_HOST:PROXY_PORT",
+        "NSTDATA_PROXY_CHECK_URL": "https://api.nstdata.io/api/v2/public/utility/client-ip"
+      }
+    }
+  }
+}
+```
+
+For both modules, set `NSTDATA_MODULES=crawl,proxy` and add `NSTDATA_API_TOKEN` in this same entry. The check URL is operator-selected; the Nstdata echo endpoint above returns the IP observed for that request.
 
 | Variable | Purpose |
 |---|---|
@@ -10,14 +30,16 @@ Use the Proxy-only template in [README.md](../README.md#proxy-setup), or set `NS
 | `NSTDATA_PROXY_CHECK_URL` | Required HTTP/HTTPS target for `nstdata_proxy_check` |
 | `NSTDATA_PROXY_CA_FILE` | Optional absolute path to a PEM CA bundle for Proxy TLS only |
 
-Use the full generated Nstdata or PM Router URL. Preserve channel/region/session/task username syntax. Gateway and target can each be HTTP or HTTPS; HTTPS targets use CONNECT. SOCKS5 and HAProxy are outside the supported protocols.
+Use the full generated Nstdata or PM Router URL. Preserve channel/region/session/task username syntax. Gateway and target can each be HTTP or HTTPS; HTTPS targets use CONNECT. SOCKS proxies are not supported.
 
 CA files must be regular files, at most 1 MiB, containing parseable certificates. Trust is added to Node's default CA set; gateway/target hostname verification stays enabled. Crawl trust settings are unchanged.
 
 ## Tools
 
 - `nstdata_proxy_fetch`: `url`, optional `method` (GET/HEAD), target `headers`, and `format` (`text` or `base64`).
-- `nstdata_proxy_check`: no arguments; checks only the configured target and returns status and elapsed milliseconds. `observedIp` is included only when the response supplies a valid plain IP or JSON `ip` string.
+- `nstdata_proxy_check`: no arguments; checks only the configured target and returns status and elapsed milliseconds. `observedIp` is included only when the response supplies a valid plain IP, JSON `ip` string, or successful Nstdata envelope (`code=200`, `err=false`, `data.ip`). Invalid or unavailable IPs are omitted. The same single request supplies status, duration and any IP; no second probe or IP information lookup is performed.
+
+`elapsedMs` covers the request through complete body decoding; it is not TCP latency, TTFB or bandwidth. An echo identifies what that endpoint observed; a rotating proxy may use a different exit for another target or request.
 
 These tools forward requests; they do not render browsers, manage PM resources or verify exit region/anonymity. Calls may consume proxy traffic.
 

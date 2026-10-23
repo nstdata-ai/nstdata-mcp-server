@@ -25,13 +25,17 @@ try {
     assert.equal(manifest.dependencies['@nstdata-ai/crawl'], '2.0.0');
     assert.equal(manifest.dependencies['@nstdata-ai/proxy-checker'], '1.1.0');
     assert.deepEqual(lock.packages['node_modules/@nstdata-ai/proxy-checker'].dependencies ?? {}, {});
+    assert.deepEqual(lock.packages['node_modules/@nstdata-ai/proxy-checker'].peerDependenciesMeta,
+        { '@nstdata-ai/ip-lookup': { optional: true } });
+    assert.equal(lock.packages['node_modules/@nstdata-ai/ip-lookup'], undefined);
     assert.equal(lock.packages['node_modules/@nstdata-ai/crawl'].version, manifest.dependencies['@nstdata-ai/crawl']);
     for (const file of ['README.md', 'README_zh.md']) {
         assert.ok(fs.readFileSync(path.join(root, file), 'utf8').includes(`npm install ${manifest.name}@${manifest.version}`), `Missing versioned installation command in ${file}`);
     }
     assert.ok(fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8').includes(`## ${manifest.version} —`), 'Missing version in changelog');
     assert.doesNotMatch(JSON.stringify(manifest) + JSON.stringify(lock), /file:|_planning/);
-    const required = ['package.json', 'README.md', 'README_zh.md', 'LICENSE', 'CHANGELOG.md', 'CONTRIBUTING.md', 'docs/mcp.md', 'docs/proxy.md'];
+    const required = ['package.json', 'README.md', 'README_zh.md', 'LICENSE', 'CHANGELOG.md', 'CONTRIBUTING.md', 'SECURITY.md',
+        'docs/mcp.md', 'docs/mcp_zh.md', 'docs/proxy.md', 'docs/proxy_zh.md'];
     for (const source of ['config', 'server', 'stdio', 'modules/crawl', 'modules/crawl-schema', 'modules/crawl-result', 'shared/errors', 'shared/output', 'modules/proxy']) {
         required.push(`dist/${source}.js`, `dist/${source}.d.ts`);
     }
@@ -39,16 +43,32 @@ try {
     for (const file of packed.files) {
         const content = fs.readFileSync(path.join(root, file.path), 'utf8');
         assert.doesNotMatch(content, /-----BEGIN (?:[A-Z]+ )*PRIVATE KEY-----|\bnpm_[a-zA-Z0-9]{30,}\b|\bgh[pousr]_[a-zA-Z0-9]{20,}\b|\/Users\/|_planning\//);
+        if (!file.path.endsWith('.md')) continue;
+        for (const match of content.matchAll(/\[[^\]\n]+\]\(([^)\n]+)\)/g)) {
+            if (/^[a-z]+:/i.test(match[1])) continue;
+            const [relative, anchor] = match[1].split('#');
+            const linked = path.posix.normalize(path.posix.join(path.posix.dirname(file.path), relative || path.posix.basename(file.path)));
+            assert.ok(required.includes(linked), `Unpackaged documentation link: ${file.path} -> ${match[1]}`);
+            if (anchor) {
+                const headings = [...fs.readFileSync(path.join(root, linked), 'utf8').matchAll(/^#+ (.+)$/gm)]
+                    .map(value => value[1].toLowerCase().replace(/[^\p{L}\p{N}_ -]/gu, '').replace(/ /g, '-'));
+                assert.ok(headings.includes(decodeURIComponent(anchor)), `Missing anchor: ${match[1]}`);
+            }
+        }
     }
-    const configs = ['README.md', 'README_zh.md'].map(name => {
-        const match = fs.readFileSync(path.join(root, name), 'utf8').match(/```json\n([\s\S]*?)```/);
-        assert.ok(match, `Missing client JSON template in ${name}`);
-        const all = [...fs.readFileSync(path.join(root, name), 'utf8').matchAll(/```json\n([\s\S]*?)```/g)].map(block => JSON.parse(block[1]));
+    const jsonBlocks = name => [...fs.readFileSync(path.join(root, name), 'utf8').matchAll(/```json\n([\s\S]*?)```/g)].map(block => JSON.parse(block[1]));
+    const configs = [['README.md', 'docs/proxy.md'], ['README_zh.md', 'docs/proxy_zh.md']].map(names => {
+        const all = names.flatMap(jsonBlocks).filter(value => value.mcpServers);
         assert.equal(all.length, 2);
         assert.equal(all[1].mcpServers.nstdata.env.NSTDATA_MODULES, 'proxy');
         return all;
     });
     assert.deepEqual(configs[0], configs[1]);
+    const examples = ['docs/mcp.md', 'docs/mcp_zh.md'].map(name => jsonBlocks(name).filter(value => value.name));
+    assert.deepEqual(examples[0], examples[1]);
+    assert.equal(examples[0].length, 3);
+    assert.deepEqual(['README.md', 'docs/proxy.md'].flatMap(name => [...fs.readFileSync(path.join(root, name), 'utf8').matchAll(/```sh\n([\s\S]*?)```/g)].map(value => value[1])),
+        ['README_zh.md', 'docs/proxy_zh.md'].flatMap(name => [...fs.readFileSync(path.join(root, name), 'utf8').matchAll(/```sh\n([\s\S]*?)```/g)].map(value => value[1])));
     assert.ok(configs[0][0].mcpServers.nstdata.args[0].endsWith(manifest.bin['nstdata-mcp-server']));
     const dependencies = { dependencies: manifest.dependencies, devDependencies: manifest.devDependencies };
     assert.deepEqual(lock.packages[''].dependencies, manifest.dependencies);
@@ -91,6 +111,45 @@ try {
     execFileSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--module', 'NodeNext', '--target', 'ES2022', '--types', 'node', '--typeRoots', path.join(root, 'node_modules/@types'), 'check.mts'], { cwd: temp, timeout: 30000 });
     const installedCli = path.join(temp, 'node_modules/@nstdata-ai/mcp-server', manifest.bin['nstdata-mcp-server']);
     assert.ok(fs.existsSync(path.join(temp, 'node_modules/.bin/nstdata-mcp-server')));
+    for (const representation of configs[0]) {
+        const entry = representation.mcpServers.nstdata;
+        assert.equal(entry.command, '/ABSOLUTE/PATH/TO/node');
+        assert.ok(entry.args[0].endsWith(manifest.bin['nstdata-mcp-server']));
+        const h = await harness({ after: fn => cleanup.push(fn) }, (_req, res) => res.end(), origin => ({
+            ...entry.env, NSTDATA_API_TOKEN: entry.env.NSTDATA_MODULES === 'crawl' ? 'fixture-token' : '',
+            NSTDATA_PROXY_URL: origin, NSTDATA_PROXY_CHECK_URL: 'http://fixture.invalid/',
+        }), 'legacy', installedCli);
+        assert.equal((await h.client.listTools()).tools.length, entry.env.NSTDATA_MODULES === 'crawl' ? 6 : 2);
+        assert.equal(h.stderr(), '');
+    }
+    for (const requests of examples) for (const era of ['legacy', 'modern']) {
+        const h = await harness({ after: fn => cleanup.push(fn) }, (req, res) => {
+            if (req.url.startsWith('/api/v1/crawl/storage/read')) { res.end('# Documented fixture'); return; }
+            if (req.url === '/api/v1/crawl/scrape') return json(res, envelope({ status: 'completed', success: true, data: { markdownRef: 'documented-ref' } }));
+            if (req.method === 'POST' && req.url === '/api/v1/crawl') return json(res, envelope({ id: 'documented-site', status: 'processing' }));
+            if (req.url.includes('/pages')) return json(res, envelope({ data: [{ url: 'https://quotes.toscrape.com/', status: 'completed', data: { markdown: '# Page' } }] }));
+            return json(res, envelope({ status: 'completed', completed: 1, total: 1, failed: 0, pending: 0 }));
+        }, {}, era, installedCli);
+        const [scrape, start, read] = requests;
+        const single = await h.client.callTool(scrape);
+        assert.equal(single.isError, false);
+        assert.equal(single.structuredContent.data.markdownRef, 'documented-ref');
+        assert.equal(h.requests.length, 1, 'Serialization must not download the reference');
+        const content = await h.client.callTool({ ...read, arguments: { ...read.arguments, ref: single.structuredContent.data.markdownRef } });
+        assert.notEqual(content.isError, true);
+        assert.equal(content.structuredContent.text, '# Documented fixture');
+        assert.equal(content.structuredContent.nextOffset, undefined);
+        assert.equal(h.requests[1].url, '/api/v1/crawl/storage/read?st=documented-ref');
+        const site = await h.client.callTool(start);
+        assert.notEqual(site.isError, true);
+        const crawlId = site.structuredContent.id;
+        const status = await h.client.callTool({ name: 'nstdata_crawl_status', arguments: { crawlId } });
+        assert.equal(status.structuredContent.status, 'completed');
+        const page = await h.client.callTool({ name: 'nstdata_crawl_pages', arguments: { crawlId, limit: 1 } });
+        assert.equal(page.structuredContent.data[0].url, 'https://quotes.toscrape.com/');
+        assert.equal(h.requests.length, 5);
+        assert.equal(h.stderr(), '');
+    }
     for (const era of ['legacy', 'modern']) {
         const h = await harness({ after: fn => cleanup.push(fn) }, (_req, res) => json(res, envelope({ status: 'completed', success: true, data: { markdown: '# Installed fixture' } })), {}, era, installedCli);
         assert.equal(h.client.getServerVersion()?.version, manifest.version);
@@ -113,57 +172,11 @@ try {
         assert.equal(result.structuredContent.observedIp, '203.0.113.9');
         assert.equal(h.stderr(), '');
     }
-    const redirectChecks = execFileSync(process.execPath, ['--test', '--test-reporter=tap',
-        path.join(root, 'test/crawl-redirect.test.mjs')], {
-        cwd: root, encoding: 'utf8', timeout: 30000,
-        env: { ...process.env, NSTDATA_TEST_CLI: installedCli },
-    });
-    assert.match(redirectChecks, /# pass 2\b/);
-    assert.match(redirectChecks, /# fail 0\b/);
-    const optionChecks = execFileSync(process.execPath, ['--test', '--test-reporter=tap',
-        path.join(root, 'test/crawl-options.test.mjs')], {
-        cwd: root, encoding: 'utf8', timeout: 30000,
-        env: { ...process.env, NSTDATA_TEST_CLI: installedCli },
-    });
-    assert.match(optionChecks, /# pass 6\b/);
-    assert.match(optionChecks, /# fail 0\b/);
-    const bodyChecks = execFileSync(process.execPath, ['--test', '--test-reporter=tap',
-        path.join(root, 'test/crawl-body-error.test.mjs')], {
-        cwd: root, encoding: 'utf8', timeout: 15000,
-        env: { ...process.env, NSTDATA_TEST_CLI: installedCli },
-    });
-    assert.match(bodyChecks, /# pass 1\b/);
-    assert.match(bodyChecks, /# fail 0\b/);
-    const submissionChecks = execFileSync(process.execPath, ['--test', '--test-reporter=tap',
-        path.join(root, 'test/submission-outcome.test.mjs')], {
-        cwd: root, encoding: 'utf8', timeout: 15000,
-        env: { ...process.env, NSTDATA_TEST_CLI: installedCli },
-    });
-    assert.match(submissionChecks, /# pass 7\b/);
-    assert.match(submissionChecks, /# fail 0\b/);
-    const contentChecks = execFileSync(process.execPath, ['--test', '--test-reporter=tap',
-        path.join(root, 'test/crawl-content.test.mjs')], {
-        cwd: root, encoding: 'utf8', timeout: 30000,
-        env: { ...process.env, NSTDATA_TEST_CLI: installedCli },
-    });
-    assert.match(contentChecks, /# pass 12\b/);
-    assert.match(contentChecks, /# fail 0\b/);
-    const interruptionChecks = execFileSync(process.execPath, ['--test', '--test-reporter=tap',
-        path.join(root, 'test/interruption.test.mjs')], {
-        cwd: root, encoding: 'utf8', timeout: 15000,
-        env: { ...process.env, NSTDATA_TEST_CLI: installedCli },
-    });
-    assert.match(interruptionChecks, /# pass 2\b/);
-    assert.match(interruptionChecks, /# fail 0\b/);
-    const deadlineChecks = execFileSync(process.execPath, ['--test', '--test-reporter=tap',
-        '--test-name-pattern=a local deadline', path.join(root, 'test/crawl.test.mjs')], {
-        cwd: root, encoding: 'utf8', timeout: 15000,
-        env: { ...process.env, NSTDATA_TEST_CLI: installedCli },
-    });
-    assert.match(deadlineChecks, /# pass 1\b/);
-    assert.match(deadlineChecks, /# fail 0\b/);
-    execFileSync(process.execPath, ['--test', path.join(root, 'test/proxy.test.mjs'), path.join(root, 'test/proxy-tls.test.mjs')], { cwd: temp, env: { ...process.env, NSTDATA_TEST_CLI: installedCli }, timeout: 30000, stdio: 'inherit' });
-    console.log(`PASS: ${packed.name}@${packed.version}; ${packed.files.length} files; allowlist/basic secret scan, paired offline install, ESM/public types, bilingual JSON templates, installed CLI Crawl+Proxy legacy/modern success; installed deadline phases, Crawl redirect/body-error and inline/truncation/identity/output-limit/credential checks`);
+    const installedTests = fs.readdirSync(path.join(root, 'test')).filter(name => name.endsWith('.test.mjs')).sort()
+        .map(name => path.join(root, 'test', name));
+    execFileSync(process.execPath, ['--test', ...installedTests], { cwd: temp,
+        env: { ...process.env, NSTDATA_TEST_CLI: installedCli }, timeout: 60000, stdio: 'inherit' });
+    console.log(`PASS: ${packed.name}@${packed.version}; ${packed.files.length} files; allowlist/basic secret scan, paired offline install, ESM/public types, bilingual JSON templates, installed CLI Crawl+Proxy legacy/modern success; all installed tests, bilingual documented workflows and packaged links`);
 } finally {
     for (const close of cleanup.reverse()) await close();
     fs.rmSync(temp, { recursive: true, force: true });
