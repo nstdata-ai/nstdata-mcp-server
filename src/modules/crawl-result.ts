@@ -13,7 +13,7 @@ export function requireSubmissionId(result: { id?: string; status?: string; succ
 }
 
 /** References stay lazy; only read_result downloads storage content. */
-export async function serializeData(data: ScrapeDataDto | undefined, options: RequestOptions): Promise<Record<string, unknown> | undefined> {
+export async function serializeData(data: ScrapeDataDto | null | undefined, options: RequestOptions): Promise<Record<string, unknown> | undefined> {
     if (!data) return undefined;
     return {
         markdown: data.markdownRef ? undefined : await data.getMarkdown(options),
