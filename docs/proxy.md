@@ -4,14 +4,14 @@
 
 ## Configuration
 
-Proxy-only requires no Crawl token. Replace the absolute paths and generated proxy connection in the client entry:
+Proxy-only requires no Crawl token. Use this client entry and replace the generated proxy connection:
 
 ```json
 {
   "mcpServers": {
     "nstdata": {
-      "command": "/ABSOLUTE/PATH/TO/node",
-      "args": ["/ABSOLUTE/INSTALL/DIRECTORY/node_modules/@nstdata-ai/mcp-server/dist/stdio.js"],
+      "command": "npx",
+      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.1"],
       "env": {
         "NSTDATA_MODULES": "proxy",
         "NSTDATA_PROXY_URL": "http://PROXY_USER:PROXY_PASSWORD@PROXY_HOST:PROXY_PORT",

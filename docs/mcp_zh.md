@@ -6,12 +6,12 @@
 
 安装后使用 [README_zh.md](../README_zh.md) 中的 stdio 配置。
 
-- **Cursor：**项目配置为 `.cursor/mcp.json`，用户配置为 `~/.cursor/mcp.json`。本地服务条目也可使用 `envFile` 指向受保护凭据文件的绝对路径，见 [Cursor MCP 文档](https://cursor.com/docs/mcp)。
-- **Claude Desktop：**按[本地 MCP 接入文档](https://modelcontextprotocol.io/docs/develop/connect-local-servers)将条目合入客户端配置。
+- **Cursor：** 项目配置为 `.cursor/mcp.json`，用户配置为 `~/.cursor/mcp.json`。本地服务条目也可使用 `envFile` 指向受保护凭据文件的绝对路径，见 [Cursor MCP 文档](https://cursor.com/docs/mcp)。
+- **Claude Desktop：** 按[本地 MCP 接入文档](https://modelcontextprotocol.io/docs/develop/connect-local-servers)将条目合入客户端配置。
 
-使用 Node 和已安装 CLI 的绝对路径，保留其他服务条目。凭据不纳入版本控制。修改环境配置后重启该 MCP 服务。
+标准配置通过 `npx` 启动安装包，保留其他服务条目。凭据不纳入版本控制。修改环境配置后重启该 MCP 服务。
 
-仅 Crawl 提供6个工具，仅 Proxy 提供2个，同时启用提供8个。提交任务前先确认工具发现成功。启动失败时查看客户端诊断或 stderr，依次核对 Node、安装版本、绝对路径和必填环境变量。
+仅 Crawl 提供6个工具，仅 Proxy 提供2个，同时启用提供8个。提交任务前先确认工具发现成功。启动失败时查看客户端诊断或 stderr，依次核对受支持的 Node 版本、`npx` 可用性和必填环境变量。图形客户端找不到 `npx` 时，可改用它的绝对可执行路径，保留包名参数。
 
 ## 配置
 
@@ -45,7 +45,19 @@ Proxy 专用变量见 [proxy_zh.md](proxy_zh.md)。未启用的模块不要求�
 ### 单页抓取
 
 ```json
-{"name":"nstdata_crawl_scrape","arguments":{"url":"https://example.com/","formats":["markdown"],"mode":"sync","options":{"onlyMainContent":true}}}
+{
+  "name": "nstdata_crawl_scrape",
+  "arguments": {
+    "url": "https://example.com/",
+    "formats": [
+      "markdown"
+    ],
+    "mode": "sync",
+    "options": {
+      "onlyMainContent": true
+    }
+  }
+}
 ```
 
 异步使用 `mode: "async"`，保存返回的 `id`，作为 `taskId` 传给 `nstdata_crawl_scrape_result`。每次调用仅查询一次，调用方应限制轮询次数与总等待。同步结果已完成时直接消费，不为取得内容再创建任务。
@@ -59,7 +71,23 @@ Proxy 专用变量见 [proxy_zh.md](proxy_zh.md)。未启用的模块不要求�
 例如收集 Quotes 首页及第二页：
 
 ```json
-{"name":"nstdata_crawl_start","arguments":{"url":"https://quotes.toscrape.com/","formats":["markdown"],"maxPages":2,"maxDepth":1,"includeUrls":["/page/2/"],"options":{"onlyMainContent":false}}}
+{
+  "name": "nstdata_crawl_start",
+  "arguments": {
+    "url": "https://quotes.toscrape.com/",
+    "formats": [
+      "markdown"
+    ],
+    "maxPages": 2,
+    "maxDepth": 1,
+    "includeUrls": [
+      "/page/2/"
+    ],
+    "options": {
+      "onlyMainContent": false
+    }
+  }
+}
 ```
 
 使用路径选择被发现的链接，起始页单独放在 `url`。过滤条件加入 `/` 可能放行其他路径。上述示例中，`onlyMainContent: true` 仅返回起始页，`false` 才收集到两页；完整页面也可能包含导航。过滤语义由服务决定，`maxPages` 只是上限，应核对返回 URL，不能只看任务完成或数量。
@@ -73,7 +101,15 @@ Proxy 专用变量见 [proxy_zh.md](proxy_zh.md)。未启用的模块不要求�
 把 `data.markdownRef` 的原值传给 **`ref`**，不是把 `markdownRef` 当作输入字段名：
 
 ```json
-{"name":"nstdata_crawl_read_result","arguments":{"ref":"RETURNED_MARKDOWN_REF","format":"markdown","offset":0,"length":2000}}
+{
+  "name": "nstdata_crawl_read_result",
+  "arguments": {
+    "ref": "RETURNED_MARKDOWN_REF",
+    "format": "markdown",
+    "offset": 0,
+    "length": 2000
+  }
+}
 ```
 
 其余对应关系为 htmlRef→html、pdfRef→pdf、screenshotRef→screenshot、rawDataRef→rawData。引用是不可解释的值，不是公开 URL；只读取获准任务返回的引用。
@@ -123,7 +159,14 @@ Proxy 专用变量见 [proxy_zh.md](proxy_zh.md)。未启用的模块不要求�
 某格式存在引用时，只返回引用并省略同格式内联内容。没有引用时，Markdown／HTML 保持字符串，内联 PDF／截图／原始数据使用字节对象：
 
 ```json
-{"data":{"screenshot":{"encoding":"base64","base64":"AP+A"}}}
+{
+  "data": {
+    "screenshot": {
+      "encoding": "base64",
+      "base64": "AP+A"
+    }
+  }
+}
 ```
 
 解码 `base64` 得到字节；原始文本先转换为 UTF-8 字节再编码。空内容保留空字符串或空 Base64，缺失内容省略。结果序列化不会自动下载引用。

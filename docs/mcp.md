@@ -9,9 +9,9 @@ Install the packages and use the stdio template in [README.md](../README.md).
 - **Cursor:** project configuration is `.cursor/mcp.json`; user configuration is `~/.cursor/mcp.json`. A local entry may use `envFile` with an absolute path to a protected credential file. See the [Cursor MCP guide](https://cursor.com/docs/mcp).
 - **Claude Desktop:** follow the [local MCP setup guide](https://modelcontextprotocol.io/docs/develop/connect-local-servers) to merge the entry into the client configuration.
 
-Use absolute Node and CLI paths. Preserve other server entries and keep credentials outside version control. Restart the MCP server after changing environment configuration.
+The standard configuration uses `npx` to start the installed package. Preserve other server entries and keep credentials outside version control. Restart the MCP server after changing environment configuration.
 
-Crawl-only exposes six tools, Proxy-only two, and both modules eight. Verify tool discovery before submitting a task. Startup failures should be checked in client diagnostics/stderr: confirm Node, installed versions, absolute paths and required environment variables.
+Crawl-only exposes six tools, Proxy-only two, and both modules eight. Verify tool discovery before submitting a task. Startup failures should be checked in client diagnostics/stderr: confirm the supported Node version, `npx` availability and required environment variables. If a graphical client cannot find `npx`, use its absolute executable path without changing the package argument.
 
 ## Configuration
 
@@ -45,7 +45,19 @@ Submission tools create potentially billable tasks. Reads may also consume servi
 ### Single page
 
 ```json
-{"name":"nstdata_crawl_scrape","arguments":{"url":"https://example.com/","formats":["markdown"],"mode":"sync","options":{"onlyMainContent":true}}}
+{
+  "name": "nstdata_crawl_scrape",
+  "arguments": {
+    "url": "https://example.com/",
+    "formats": [
+      "markdown"
+    ],
+    "mode": "sync",
+    "options": {
+      "onlyMainContent": true
+    }
+  }
+}
 ```
 
 For asynchronous work, use `mode: "async"`. Save the returned `id` and pass it as `taskId` to `nstdata_crawl_scrape_result`. Each call performs one query; callers must bound polling. Consume completed synchronous results directly.
@@ -59,7 +71,23 @@ Call `nstdata_crawl_start` with an explicit `maxPages`. Save its `id` and pass i
 For example, collect the Quotes homepage and its second page:
 
 ```json
-{"name":"nstdata_crawl_start","arguments":{"url":"https://quotes.toscrape.com/","formats":["markdown"],"maxPages":2,"maxDepth":1,"includeUrls":["/page/2/"],"options":{"onlyMainContent":false}}}
+{
+  "name": "nstdata_crawl_start",
+  "arguments": {
+    "url": "https://quotes.toscrape.com/",
+    "formats": [
+      "markdown"
+    ],
+    "maxPages": 2,
+    "maxDepth": 1,
+    "includeUrls": [
+      "/page/2/"
+    ],
+    "options": {
+      "onlyMainContent": false
+    }
+  }
+}
 ```
 
 Use paths to select discovered links; submit the seed separately as `url`. Adding `/` to the filter can admit other paths. In this example, `onlyMainContent: true` returned only the seed, while `false` collected both pages. Full-page output can include navigation. Filter semantics are service-specific, and `maxPages` is an upper bound: verify the returned URLs, not just task completion or page count.
@@ -71,7 +99,15 @@ Page inputs accept `limit` (1–100, default 10) and one of `afterCursor`/`befor
 Pass the value of `data.markdownRef` as **`ref`**, with `format: "markdown"`:
 
 ```json
-{"name":"nstdata_crawl_read_result","arguments":{"ref":"RETURNED_MARKDOWN_REF","format":"markdown","offset":0,"length":2000}}
+{
+  "name": "nstdata_crawl_read_result",
+  "arguments": {
+    "ref": "RETURNED_MARKDOWN_REF",
+    "format": "markdown",
+    "offset": 0,
+    "length": 2000
+  }
+}
 ```
 
 Use the same mapping for htmlRef→html, pdfRef→pdf, screenshotRef→screenshot and rawDataRef→rawData. References are opaque values, not public URLs. Only read references from an authorized task.
@@ -116,7 +152,14 @@ Results contain the same JSON in `content` text and `structuredContent`. Protoco
 When a format has a storage reference, the tool returns that reference and omits the inline value, even if the service supplies both. Without a reference, Markdown/HTML remain strings; inline `pdf`, `screenshot` and `rawData` are byte envelopes:
 
 ```json
-{"data":{"screenshot":{"encoding":"base64","base64":"AP+A"}}}
+{
+  "data": {
+    "screenshot": {
+      "encoding": "base64",
+      "base64": "AP+A"
+    }
+  }
+}
 ```
 
 Decode each envelope's `base64` to bytes. Inline raw text is converted to UTF-8 bytes before Base64 encoding. Empty content has an empty string or empty Base64 value; missing content is omitted. Tools do not download references during result serialization.

@@ -16,24 +16,22 @@ Use Nstdata Crawl and HTTP/HTTPS proxies from an MCP client. The client starts t
 
 ## Install
 
-Supports Node.js 22 (22.18 or later) and 24.
-
-> Version 1.0.1 is not yet available on npm. Local archive installation is documented in [Contributing](CONTRIBUTING.md).
+Supports Node.js 22 (22.18 or later) and 24. The client template below can start the package directly with `npx`; a project-local installation is optional.
 
 ```sh
-npm install @nstdata-ai/mcp-server@1.0.1
+npm install @nstdata-ai/mcp-server
 ```
 
 ## Connect a client
 
-Replace the absolute Node/installation paths and Crawl token in the client's MCP configuration. Preserve other server entries.
+Add this entry to your client's MCP configuration and replace the Crawl token. Preserve other server entries. The client must be able to find Node.js and `npx` on PATH.
 
 ```json
 {
   "mcpServers": {
     "nstdata": {
-      "command": "/ABSOLUTE/PATH/TO/node",
-      "args": ["/ABSOLUTE/INSTALL/DIRECTORY/node_modules/@nstdata-ai/mcp-server/dist/stdio.js"],
+      "command": "npx",
+      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.1"],
       "env": {
         "NSTDATA_MODULES": "crawl",
         "NSTDATA_API_TOKEN": "YOUR_CRAWL_API_TOKEN"

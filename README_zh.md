@@ -16,24 +16,22 @@
 
 ## 安装
 
-支持 Node.js 22（22.18 及以上）和 24。
-
-> 1.0.1 尚未在 npm 发布。本地归档安装见[贡献说明](CONTRIBUTING.md)。
+支持 Node.js 22（22.18 及以上）和 24。下方客户端模板可直接通过 `npx` 启动，项目本地安装为可选方式。
 
 ```sh
-npm install @nstdata-ai/mcp-server@1.0.1
+npm install @nstdata-ai/mcp-server
 ```
 
 ## 连接客户端
 
-在客户端 MCP 配置中替换 Node、安装目录的绝对路径及 Crawl Token，保留其他服务条目。
+在客户端 MCP 配置中添加以下条目并替换 Crawl Token，保留其他服务条目。客户端需要能够从 PATH 找到 Node.js 和 `npx`。
 
 ```json
 {
   "mcpServers": {
     "nstdata": {
-      "command": "/ABSOLUTE/PATH/TO/node",
-      "args": ["/ABSOLUTE/INSTALL/DIRECTORY/node_modules/@nstdata-ai/mcp-server/dist/stdio.js"],
+      "command": "npx",
+      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.1"],
       "env": {
         "NSTDATA_MODULES": "crawl",
         "NSTDATA_API_TOKEN": "YOUR_CRAWL_API_TOKEN"

@@ -45,11 +45,20 @@
     "@modelcontextprotocol/client": "2.3.1",
     "@modelcontextprotocol/core": "2.3.1",
     "@types/node": "22.18.0",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "marked": "18.1.1"
   },
   "keywords": [
     "mcp",
     "nstdata",
     "crawl"
-  ]
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nstdata-ai/nstdata-mcp-server.git"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  }
 }

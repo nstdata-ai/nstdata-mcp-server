@@ -4,14 +4,14 @@
 
 ## 配置
 
-仅 Proxy 无需 Crawl Token。在客户端条目中替换绝对路径及平台生成的代理连接：
+仅 Proxy 无需 Crawl Token。使用以下客户端条目，替换为平台生成的代理连接：
 
 ```json
 {
   "mcpServers": {
     "nstdata": {
-      "command": "/ABSOLUTE/PATH/TO/node",
-      "args": ["/ABSOLUTE/INSTALL/DIRECTORY/node_modules/@nstdata-ai/mcp-server/dist/stdio.js"],
+      "command": "npx",
+      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.1"],
       "env": {
         "NSTDATA_MODULES": "proxy",
         "NSTDATA_PROXY_URL": "http://PROXY_USER:PROXY_PASSWORD@PROXY_HOST:PROXY_PORT",
