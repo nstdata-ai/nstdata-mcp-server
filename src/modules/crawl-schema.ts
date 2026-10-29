@@ -7,7 +7,8 @@ export const httpURL = z.url().max(8192).refine(value => {
     const url = new URL(value);
     return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password;
 }, 'Use an HTTP(S) URL without embedded credentials');
-export const identifier = z.string().trim().min(1).max(256);
+export const identifier = z.string().trim().min(1).max(256)
+    .refine(value => value !== '.' && value !== '..', 'Task IDs must not be . or ..');
 export const formats = z.array(z.enum(['markdown', 'html', 'links', 'pdf', 'screenshot', 'rawData'])).min(1).max(6).default(['markdown']);
 
 const action = z.discriminatedUnion('type', [

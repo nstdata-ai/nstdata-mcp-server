@@ -46,7 +46,7 @@ test('read failures and rejected credentials do not claim an unknown submission'
 test('async acknowledgements require a reusable ID while explicit failures and sync content remain valid', { timeout: 10000 }, async t => {
     let response;
     const h = await harness(t, (_req, res) => json(res, { code: 200, err: false, data: response }));
-    for (const id of [undefined, null, '', '   ', ' padded ', 42, 'x'.repeat(257)]) {
+    for (const id of [undefined, null, '', '   ', '.', '..', ' padded ', 42, 'x'.repeat(257)]) {
         response = { id, status: 'processing' };
         for (const request of submissions.slice(1)) {
             const before = h.requests.length;
@@ -76,3 +76,23 @@ test('async acknowledgements require a reusable ID while explicit failures and s
         assert.equal(result.structuredContent.id, 'valid-task');
     }
 });
+
+for (const era of ['legacy', 'modern']) {
+    test(`${era} dot-only IDs are rejected as tool inputs before API requests`, { timeout: 10000 }, async t => {
+        const h = await harness(t, (_req, res) => json(res, { code: 200, err: false,
+            data: { id: 'task.v1', status: 'processing' } }), {}, era);
+        for (const id of ['.', '..']) {
+            for (const [name, key] of [['nstdata_crawl_status', 'crawlId'],
+                ['nstdata_crawl_pages', 'crawlId'], ['nstdata_crawl_scrape_result', 'taskId']]) {
+                const result = await h.client.callTool({ name, arguments: { [key]: id } });
+                assert.equal(result.isError, true);
+                assert.match(result.content[0].text, /validation|Invalid arguments/i);
+            }
+        }
+        assert.equal(h.requests.length, 0);
+        const valid = await h.client.callTool({ name: 'nstdata_crawl_status', arguments: { crawlId: 'task.v1' } });
+        assert.notEqual(valid.isError, true);
+        assert.equal(h.requests.length, 1);
+        assert.equal(h.requests[0].url, '/api/v1/crawl/task.v1');
+    });
+}
