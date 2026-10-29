@@ -7,7 +7,7 @@ const executable = process.env.NSTDATA_TEST_CLI ?? cli;
 for (const era of ['legacy', 'modern']) {
     test(`${era} Crawl tools preserve inline binary content without hidden downloads`, { timeout: 10000 }, async t => {
         const h = await harness(t, (req, res) => {
-            const data = { pdf: 'JVBERi0xLjQK', screenshot: 'AP+A', rawData: '<p>雪</p>' };
+            const data = { pdf: 'JVBERi0xLjQK', screenshot: 'AP+A', rawData: '<p>雪😀\uFFFD</p>' };
             json(res, envelope(req.url.split('?')[0].endsWith('/pages') ? { data: [{ data }] } : { success: true, data }));
         }, {}, era, executable);
         for (const request of [
@@ -21,7 +21,7 @@ for (const era of ['legacy', 'modern']) {
             const data = request.name === 'nstdata_crawl_pages' ? result.structuredContent.data[0].data : result.structuredContent.data;
             assert.deepEqual(data.pdf, { encoding: 'base64', base64: 'JVBERi0xLjQK' });
             assert.deepEqual(data.screenshot, { encoding: 'base64', base64: 'AP+A' });
-            assert.deepEqual(data.rawData, { encoding: 'base64', base64: 'PHA+6ZuqPC9wPg==' });
+            assert.deepEqual(data.rawData, { encoding: 'base64', base64: Buffer.from('3c703ee99baaf09f9880efbfbd3c2f703e', 'hex').toString('base64') });
         }
         assert.equal(h.requests.length, 3);
         assert.ok(h.requests.every(request => !request.url.includes('/storage/')));
@@ -127,6 +127,34 @@ test('malformed inline content fails without returning private values or creatin
     assert.doesNotMatch(JSON.stringify(result), /private-response/);
     assert.equal(h.requests.length, 1);
 });
+
+for (const era of ['legacy', 'modern']) {
+    test(`${era} malformed inline raw Unicode is a tool error without altered content or retries`, { timeout: 10000 }, async t => {
+        let rawData;
+        const h = await harness(t, (req, res) => {
+            const data = { rawData };
+            json(res, envelope(req.url.split('?')[0].endsWith('/pages') ? { data: [{ data }] } : { success: true, data }));
+        }, {}, era, executable);
+        for (const value of ['\ud800', '\udc00', 'private-response\ud800']) {
+            rawData = value;
+            for (const request of [
+                { name: 'nstdata_crawl_scrape', arguments: { url: 'https://example.com', formats: ['rawData'] } },
+                { name: 'nstdata_crawl_scrape_result', arguments: { taskId: 'existing' } },
+                { name: 'nstdata_crawl_pages', arguments: { crawlId: 'existing' } },
+            ]) {
+                const result = await h.client.callTool(request);
+                assert.equal(result.isError, true);
+                assert.equal(result.structuredContent.error.code, 'UPSTREAM_ERROR');
+                assert.equal(result.structuredContent.data, undefined);
+                assert.deepEqual(JSON.parse(result.content[0].text), result.structuredContent);
+                assert.doesNotMatch(JSON.stringify(result), /private-response|\\ud800|\\udc00|\uFFFD/);
+            }
+        }
+        assert.equal(h.requests.length, 9);
+        assert.ok(h.requests.every(request => !request.url.includes('/storage/')));
+        assert.equal(h.stderr(), '');
+    });
+}
 
 test('untrusted encoding-shaped metadata cannot bypass configured credential filtering', { timeout: 10000 }, async t => {
     for (const token of ['AQID', 'QUJD', 'fixture-token']) {
