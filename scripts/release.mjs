@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { verifyStartup } from './check-startup.mjs';
 
@@ -78,14 +79,24 @@ async function checkPackage(fetchImpl) {
     assert.equal(result.data.name, name, 'Unexpected package metadata');
 }
 
-async function checkRegistry(version, integrity, fetchImpl) {
-    const result = await request(`${registry}/${encodeURIComponent(name)}/${version}`, undefined, fetchImpl);
-    if (integrity === undefined) assert.equal(result.status, 404, 'Version already exists; do not republish');
-    else {
-        assert.equal(result.status, 200, 'Published version not visible; inspect registry before another dispatch');
+async function checkRegistry(version, integrity, fetchImpl, wait = delay) {
+    const attempts = integrity === undefined ? 1 : 7;
+    for (let attempt = 0; attempt < attempts; attempt++) {
+        const result = await request(`${registry}/${encodeURIComponent(name)}/${version}`, undefined, fetchImpl);
+        if (integrity === undefined) {
+            assert.equal(result.status, 404, 'Version already exists; do not republish');
+            return;
+        }
+        if (result.status === 404 && attempt < attempts - 1) {
+            console.log('Published version not yet visible; waiting before a read-only registry check.');
+            await wait(30000);
+            continue;
+        }
+        assert.equal(result.status, 200, 'Published version not visible after bounded checks; inspect registry before another dispatch');
         assert.equal(result.data.name, name);
         assert.equal(result.data.version, version);
         assert.equal(result.data.dist?.integrity, integrity, 'Published integrity differs');
+        return;
     }
 }
 

@@ -6,6 +6,7 @@
 - Support sync/async single-page scraping, bounded site submission, task status, cursor pages and Unicode/binary reference chunks.
 - Prefer storage references over inline content; encode inline binary content explicitly and preserve service identifiers, empty content and truncation flags.
 - Validate inputs before submission; bound deadlines, downloads and output, propagate cancellation and close active connections at shutdown.
+- Reject dot-only task IDs in tool inputs and asynchronous submission acknowledgements.
 - Refuse redirects and automatic retries; distinguish failed tasks from unknown submission outcomes and preserve bounded recovery identifiers.
 - Filter configured credentials and withhold sensitive opaque/binary output; reject malformed UTF-8 text without changing binary bytes.
 - Reuse Crawl SDK 2.0.0 and proxy-checker 1.1.0 transport with locked archive integrity.

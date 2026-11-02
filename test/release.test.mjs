@@ -91,7 +91,7 @@ test('registry checks distinguish an absent version from errors and require exac
     await assert.rejects(checkRegistry(pkg.version, undefined, async () => response(published)), /already exists/);
     await checkRegistry(pkg.version, published.dist.integrity, async () => response(published));
     await assert.rejects(checkRegistry(pkg.version, 'wrong', async () => response(published)), /integrity differs/);
-    await assert.rejects(checkRegistry(pkg.version, published.dist.integrity, async () => response({}, 404)), /not visible/);
+    await assert.rejects(checkRegistry(pkg.version, published.dist.integrity, async () => response({}, 404), async () => {}), /not visible/);
     for (const status of [401, 403, 429, 500]) {
         let calls = 0;
         await assert.rejects(checkRegistry(pkg.version, undefined, async () => { calls++; return response({}, status); }));
@@ -99,6 +99,29 @@ test('registry checks distinguish an absent version from errors and require exac
     }
     await assert.rejects(request('https://fixture.invalid', undefined, async () => { throw new Error('network unavailable'); }));
     await assert.rejects(request('https://fixture.invalid', undefined, async () => ({ status: 200, json: async () => { throw new Error('invalid JSON'); } })));
+});
+
+test('published registry checks tolerate delayed visibility without retrying a publication', async () => {
+    const published = { name: pkg.name, version: pkg.version, dist: { integrity: 'sha512-fixture' } };
+    let reads = 0;
+    const delays = [];
+    await checkRegistry(pkg.version, published.dist.integrity,
+        async () => ++reads < 7 ? response({}, 404) : response(published),
+        async milliseconds => { delays.push(milliseconds); });
+    assert.equal(reads, 7);
+    assert.deepEqual(delays, Array(6).fill(30000));
+    reads = 0;
+    await assert.rejects(checkRegistry(pkg.version, published.dist.integrity,
+        async () => { reads++; return response({}, 404); }, async () => {}), /not visible after bounded checks/);
+    assert.equal(reads, 7);
+    for (const result of [response({ ...published, dist: { integrity: 'different' } }),
+        response({ ...published, name: 'different' }), response({ ...published, version: '1.0.2' }),
+        ...[401, 403, 429, 500].map(status => response({}, status))]) {
+        reads = 0;
+        await assert.rejects(checkRegistry(pkg.version, published.dist.integrity,
+            async () => { reads++; return result; }, async () => assert.fail('Unexpected retry')));
+        assert.equal(reads, 1);
+    }
 });
 
 test('publish CLI uses one checked archive without retries and preserves safe failure diagnostics', () => {
@@ -133,23 +156,26 @@ test('publish CLI uses one checked archive without retries and preserves safe fa
         const preload = path.join(directory, 'network.cjs');
         fs.writeFileSync(preload, `
             const fs=require('node:fs');
+            let registryReads=0;
+            require('node:timers/promises').setTimeout=async ms=>{if(ms!==30000) throw new Error('Unexpected delay');};
+            require('node:module').syncBuiltinESMExports();
             globalThis.fetch=async url=>{
                 let data,status=200;
                 if(url.includes('/deployment-branch-policies?')) data=${JSON.stringify(policies)};
                 else if(url==='https://api.github.com/repos/nstdata-ai/nstdata-mcp-server/environments/npm-production') data=${JSON.stringify(environment)};
                 else if(url==='https://registry.npmjs.org/%40nstdata-ai%2Fmcp-server/${manifest.version}') {
                     const done=fs.existsSync(process.env.RELEASE_TEST_LOG);
-                    status=done?200:404;data=${JSON.stringify({ name: manifest.name, version: manifest.version, dist: { integrity: manifest.integrity } })};
+                    status=done && !(process.env.RELEASE_TEST_DELAYED==='1' && ++registryReads<3)?200:404;data=${JSON.stringify({ name: manifest.name, version: manifest.version, dist: { integrity: manifest.integrity } })};
                 } else throw new Error('Unexpected network request');
                 return {status,json:async()=>data};
             };
         `);
-        for (const [failure, staleLatest] of [[false, false], [true, false], [false, true]]) {
+        for (const [failure, staleLatest, delayed] of [[false, false, false], [true, false, false], [false, true, false], [false, false, true]]) {
             fs.rmSync(log, { force: true });
             const result = spawnSync(process.execPath, ['--require', preload, path.resolve(__dirname, '../scripts/release.mjs'), 'publish', directory], {
                 env: { ...process.env, ...env, RELEASE_VERSION: manifest.version, PATH: `${bin}${path.delimiter}${process.env.PATH}`, NODE_AUTH_TOKEN: '', NPM_TOKEN: '',
                     RELEASE_MANIFEST_SHA256: hash(text), RELEASE_TEST_LOG: log, RELEASE_TEST_FAIL: failure ? '1' : '0',
-                    RELEASE_TEST_STALE_LATEST: staleLatest ? '1' : '0', GITHUB_STEP_SUMMARY: path.join(directory, 'summary.md') },
+                    RELEASE_TEST_STALE_LATEST: staleLatest ? '1' : '0', RELEASE_TEST_DELAYED: delayed ? '1' : '0', GITHUB_STEP_SUMMARY: path.join(directory, 'summary.md') },
                 encoding: 'utf8', timeout: 15000,
             });
             assert.equal(result.status, failure || staleLatest ? 1 : 0, result.stderr);
