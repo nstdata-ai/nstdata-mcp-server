@@ -121,16 +121,23 @@ test('HTTPS through CONNECT trusts the explicit CA, verifies hostnames and keeps
     assert.equal(good.structuredContent.body, 'trusted target');
     assert.equal(proxy.connections[0].authority, `localhost:${port}`);
     assert.match(proxy.connections[0].headers['proxy-authorization'], /^Basic /);
+    assert.equal(received[0].host, `localhost:${port}`);
     assert.equal(received[0]['proxy-authorization'], undefined);
     assert.equal(received[0]['x-api-key'], undefined);
+    const checked = await h.client.callTool({ name: 'nstdata_proxy_check', arguments: {} });
+    assert.equal(checked.isError, false);
+    assert.equal(checked.structuredContent.statusCode, 200);
+    assert.equal(received[1].host, `localhost:${port}`);
+    assert.equal(received[1]['proxy-authorization'], undefined);
+    assert.equal(received[1]['x-api-key'], undefined);
     const mismatch = await h.client.callTool({ name: 'nstdata_proxy_fetch', arguments: { url: `https://wrong.invalid:${port}/` } });
     assert.equal(mismatch.isError, true);
-    assert.equal(received.length, 1);
+    assert.equal(received.length, 2);
     const { NSTDATA_PROXY_CA_FILE: _omittedCA, ...withoutCA } = config;
     const untrusted = await harness(t, (_req, res) => res.end(), withoutCA);
     const rejected = await untrusted.client.callTool({ name: 'nstdata_proxy_fetch', arguments: { url: `https://localhost:${port}/` } });
     assert.equal(rejected.isError, true);
-    assert.equal(received.length, 1);
+    assert.equal(received.length, 2);
 });
 
 test('HTTPS target 407 remains a target response in fetch and check tools', { timeout: 10000 }, async t => {

@@ -43,7 +43,7 @@ Add this entry to your client's MCP configuration and replace the Crawl token. P
 
 Restart this MCP service after changing configuration. Crawl exposes six tools; Proxy exposes two; enabling both exposes eight. Disabled modules do not require their credentials. See [client setup](docs/mcp.md#client-setup) and the [Crawl tool reference](docs/mcp.md#tool-reference).
 
-The process reads environment variables and does not load `.env` files itself. Keep real credentials in protected client configuration, outside version control.
+The process reads environment variables and does not load `.env` files itself. Startup configuration errors identify the variables to check. Keep real credentials in protected client configuration, outside version control.
 
 ## Proxy setup
 

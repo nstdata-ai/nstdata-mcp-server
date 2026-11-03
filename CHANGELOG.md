@@ -9,8 +9,8 @@
 - Reject dot-only task IDs in tool inputs and asynchronous submission acknowledgements.
 - Refuse redirects and automatic retries; distinguish failed tasks from unknown submission outcomes and preserve bounded recovery identifiers.
 - Filter configured credentials and withhold sensitive opaque/binary output; reject malformed UTF-8 text without changing binary bytes.
-- Reuse Crawl SDK 2.0.0 and proxy-checker 1.1.0 transport with locked archive integrity.
+- Reuse Crawl SDK 2.0.0 and proxy-checker 1.2.0 transport with locked archive integrity; preserve the target Host header for HTTPS requests.
 - Recognize successful Nstdata client-IP envelopes in Proxy checks without additional requests.
-- Report invalid configuration URLs by field name without retaining the raw input in a native URL error.
+- Identify invalid environment settings by variable name without exposing their values; keep programmatic configuration errors keyed by field name.
 - Include bilingual setup, tool/workflow references, executable client templates and installed CLI/type/behavior checks.
 - Provide manually dispatched npm releases with environment approval, same-archive verification and public installation checks.

@@ -44,8 +44,10 @@ try {
     assert.equal(lock.version, manifest.version);
     assert.equal(lock.packages[''].version, manifest.version);
     assert.equal(manifest.dependencies['@nstdata-ai/crawl'], '2.0.0');
-    assert.equal(manifest.dependencies['@nstdata-ai/proxy-checker'], '1.1.0');
-    assert.deepEqual(lock.packages['node_modules/@nstdata-ai/proxy-checker'].dependencies ?? {}, {});
+    assert.equal(manifest.dependencies['@nstdata-ai/proxy-checker'], '1.2.0');
+    assert.deepEqual(lock.packages['node_modules/@nstdata-ai/proxy-checker'].dependencies,
+        { '@nstdata-ai/proxy': '^1.1.0' });
+    assert.equal(lock.packages['node_modules/@nstdata-ai/proxy'].version, '1.1.0');
     assert.deepEqual(lock.packages['node_modules/@nstdata-ai/proxy-checker'].peerDependenciesMeta,
         { '@nstdata-ai/ip-lookup': { optional: true } });
     assert.equal(lock.packages['node_modules/@nstdata-ai/ip-lookup'], undefined);

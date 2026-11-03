@@ -13,7 +13,13 @@ For offline development, cache the complete locked dependency graph before runni
 
 ## Local package installation
 
-After the checks pass, run `npm pack` to build `nstdata-ai-mcp-server-1.0.1.tgz`. In a separate application directory, install that archive together with the approved `nstdata-ai-crawl-2.0.0.tgz` and `nstdata-ai-proxy-checker-1.1.0.tgz` by passing all three local paths to `npm install --ignore-scripts`. Use the same package versions and integrity values as the lock. Configure the installed package using the README template; do not point clients at source files.
+After the checks pass, run `npm pack` to build `nstdata-ai-mcp-server-1.0.1.tgz`. Install it from a separate application directory:
+
+```sh
+npm install --ignore-scripts /path/to/nstdata-ai-mcp-server-1.0.1.tgz
+```
+
+Configure the installed package using the README template; do not point clients at source files.
 
 Cover observable tool inputs/results, failure/empty content, deadlines, cancellation, output limits, reference continuation and process cleanup. Keep stdout exclusively for MCP protocol traffic. Task creation must not gain automatic retries.
 
