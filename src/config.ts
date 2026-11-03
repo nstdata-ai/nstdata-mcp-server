@@ -38,17 +38,43 @@ const configuration = z.strictObject({
 
 export type Config = z.infer<typeof configuration>;
 
-export function validateConfig(input: unknown): Config {
+const environmentVariables = {
+    apiToken: 'NSTDATA_API_TOKEN',
+    baseURL: 'NSTDATA_API_BASE_URL',
+    modules: 'NSTDATA_MODULES',
+    proxyURL: 'NSTDATA_PROXY_URL',
+    proxyCheckURL: 'NSTDATA_PROXY_CHECK_URL',
+    proxyCAFile: 'NSTDATA_PROXY_CA_FILE',
+    httpTimeoutMs: 'NSTDATA_HTTP_TIMEOUT_MS',
+    maxResponseBytes: 'NSTDATA_MAX_RESPONSE_BYTES',
+    maxOutputChars: 'NSTDATA_MAX_OUTPUT_CHARS',
+    maxCrawlPages: 'NSTDATA_MAX_CRAWL_PAGES',
+} satisfies Record<keyof Config, string>;
+
+// Only this error's allowlisted variable names are safe for CLI diagnostics.
+export class EnvironmentConfigError extends Error {
+    constructor(fields: string[]) {
+        super(`Invalid configuration: ${fields.map(field => environmentVariables[field as keyof Config] ?? 'environment').join(', ')}`);
+    }
+}
+
+function parseConfig(input: unknown, fromEnvironment: boolean): Config {
     const result = configuration.safeParse(input);
     if (!result.success) {
-        throw new Error(`Invalid configuration: ${[...new Set(result.error.issues.map(issue => issue.path.join('.')))].join(', ')}`);
+        const fields = [...new Set(result.error.issues.map(issue => issue.path.join('.')))];
+        if (fromEnvironment) throw new EnvironmentConfigError(fields);
+        throw new Error(`Invalid configuration: ${fields.join(', ')}`);
     }
     return result.data;
 }
 
+export function validateConfig(input: unknown): Config {
+    return parseConfig(input, false);
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     const modules = env.NSTDATA_MODULES ?? 'crawl';
-    return validateConfig({
+    return parseConfig({
         apiToken: modules.includes('crawl') ? env.NSTDATA_API_TOKEN : undefined,
         baseURL: modules.includes('crawl') ? env.NSTDATA_API_BASE_URL ?? 'https://api.nstdata.io' : 'https://api.nstdata.io',
         modules,
@@ -59,5 +85,5 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
         maxResponseBytes: env.NSTDATA_MAX_RESPONSE_BYTES,
         maxOutputChars: env.NSTDATA_MAX_OUTPUT_CHARS,
         maxCrawlPages: modules.includes('crawl') ? env.NSTDATA_MAX_CRAWL_PAGES : undefined,
-    });
+    }, true);
 }
