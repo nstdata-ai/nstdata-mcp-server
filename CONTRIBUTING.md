@@ -29,7 +29,7 @@ Verify license ownership, dependency availability, compatibility and maintainer 
 
 ## Releases
 
-The `Publish npm` workflow runs only when manually dispatched from `main`, with the stable version in `package.json` and a full reviewed commit SHA. Checks produce one archive and its integrity manifest. The `npm-production` reviewer approves publication of those exact bytes. Published integrity, default installation and tool discovery must pass afterward.
+The `Publish npm` workflow runs only when manually dispatched from `main`, with the stable version in `package.json` and a full reviewed commit SHA. Checks produce one archive and its integrity manifest. The `npm-production` reviewer approves publication of those exact bytes. The workflow finishes when `npm publish` succeeds. Public availability may be delayed; registry integrity, installation and tool discovery are checked separately.
 
 Crawl SDK and Proxy Checker dependencies must be publicly available with the lock's exact integrity before remote CI or release. Configure [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/) for this repository, `release.yml` and `npm-production`, permitting `npm publish`. Require an environment reviewer, allow only `main` and disable administrator bypass. No npm token is needed.
 
