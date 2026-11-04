@@ -74,8 +74,16 @@ net.Socket.prototype.connect=function(...args){
             fs.writeFileSync(path.join(application, 'package.json'), '{"private":true,"type":"module"}');
             const localEnv = { ...env, npm_config_cache: path.join(application, 'cache') };
             const commands = shellCommands(fs.readFileSync(path.join(root, readme), 'utf8'));
-            assert.deepEqual(commands, [['npm', 'install', manifest.name]]);
+            assert.deepEqual(commands, [['npm', 'install', manifest.name],
+                ['npx', '--yes', manifest.name, '--help'], ['npx', '--yes', manifest.name, '--version']]);
             await execute(process.execPath, [process.env.npm_execpath, ...commands[0].slice(1)], { cwd: application, env: localEnv, timeout: 60000 });
+            for (const command of commands.slice(1)) {
+                const { stdout, stderr } = await execute(command[0], command.slice(1), { cwd: application, env: localEnv, timeout: 10000 });
+                assert.equal(stderr, '');
+                if (command.at(-1) === '--version') assert.equal(stdout, `${manifest.version}\n`);
+                else assert.match(stdout, /Usage: nstdata-mcp-server/);
+                assert.equal(businessRequests, 0, 'CLI information must not call a business API');
+            }
             const installed = path.join(application, 'node_modules', manifest.name);
             for (const file of files) assert.deepEqual(fs.readFileSync(path.join(installed, file)), fs.readFileSync(path.join(temp, 'node_modules', manifest.name, file)));
             for (const entry of entries) {

@@ -233,3 +233,85 @@ test('an oversized page-list read can resume from the same position with smaller
     assert.equal(h.requests.length, 3);
     assert.ok(h.requests.every(request => request.method === 'GET' && !request.url.includes('/storage/')));
 });
+
+for (const era of ['legacy', 'modern']) {
+    test(`${era} an oversized single row retains references without advancing past unread content`, { timeout: 10000 }, async t => {
+        const h = await harness(t, (req, res) => {
+            const url = new URL(req.url, 'http://localhost');
+            if (url.pathname.endsWith('/storage/read')) {
+                assert.equal(url.searchParams.get('st'), 'large-page-markdown');
+                res.end('# Recovered page'); return;
+            }
+            const next = url.searchParams.get('after_cursor') === 'second-row';
+            json(res, envelope({ data: [{ id: next ? 'second' : 'first',
+                url: next ? 'https://example.com/two' : 'https://example.com/one',
+                status: 'completed', success: true,
+                data: next ? { markdown: '# Second page' } : {
+                    markdownRef: 'large-page-markdown', truncated: false,
+                    links: Array(350).fill('https://example.com/long-link'),
+                } }], ...(next ? {} : { nextCursor: 'second-row' }) }));
+        }, { NSTDATA_MAX_OUTPUT_CHARS: '1024' }, era, executable);
+        const first = await h.client.callTool({ name: 'nstdata_crawl_pages', arguments: { crawlId: 'existing', limit: 1 } });
+        assert.equal(first.isError, true);
+        const { code, recovery } = first.structuredContent.error;
+        assert.equal(code, 'OUTPUT_LIMIT');
+        assert.equal(recovery.nextCursor, undefined);
+        assert.equal(recovery.prevCursor, undefined);
+        assert.equal(recovery.crawlId, 'existing');
+        assert.deepEqual(recovery.page, { id: 'first', url: 'https://example.com/one', status: 'completed', success: true,
+            data: { markdownRef: 'large-page-markdown', truncated: false } });
+        assert.deepEqual(recovery.continuation, { nextCursor: 'second-row' });
+        assert.ok(first.content[0].text.length <= 1024);
+        assert.equal(h.requests.length, 1, 'Recovering metadata must not download references');
+        const content = await h.client.callTool({ name: 'nstdata_crawl_read_result', arguments: {
+            ref: recovery.page.data.markdownRef, format: 'markdown', length: 2000,
+        } });
+        assert.equal(content.structuredContent.text, '# Recovered page');
+        const second = await h.client.callTool({ name: 'nstdata_crawl_pages', arguments: {
+            crawlId: 'existing', afterCursor: recovery.continuation.nextCursor, limit: 1,
+        } });
+        assert.notEqual(second.isError, true);
+        assert.equal(second.structuredContent.data[0].url, 'https://example.com/two');
+        assert.equal(second.structuredContent.nextCursor, undefined);
+        assert.equal(h.requests.length, 3);
+        assert.ok(h.requests.every(request => request.method === 'GET'));
+        assert.equal(h.stderr(), '');
+    });
+}
+
+test('oversized multi-row pages and rows without recoverable references never advertise continuation', { timeout: 10000 }, async t => {
+    let rows;
+    const h = await harness(t, (_req, res) => json(res, envelope({ data: rows,
+        nextCursor: 'after-hidden-rows', prevCursor: 'before-hidden-rows' })), { NSTDATA_MAX_OUTPUT_CHARS: '1024' });
+    for (const data of [
+        [{ data: { markdown: 'x'.repeat(2000) } }],
+        [{ data: { markdownRef: 'x'.repeat(2000) } }],
+        [{ data: { markdownRef: 'first', links: Array(100).fill('https://example.com/long') } }, { data: { markdownRef: 'second' } }],
+    ]) {
+        rows = data;
+        const result = await h.client.callTool({ name: 'nstdata_crawl_pages', arguments: { crawlId: 'existing', limit: data.length } });
+        assert.equal(result.isError, true);
+        assert.equal(result.structuredContent.error.code, 'OUTPUT_LIMIT');
+        const recovery = result.structuredContent.error.recovery;
+        assert.equal(recovery.nextCursor, undefined);
+        assert.equal(recovery.prevCursor, undefined);
+        assert.equal(recovery.continuation, undefined);
+        assert.ok(result.content[0].text.length <= 1024);
+    }
+    assert.equal(h.requests.length, 3);
+});
+
+test('single-row recovery stays within budget and never exposes credential-bearing references', { timeout: 10000 }, async t => {
+    let data = { markdownRef: 'x'.repeat(2000), htmlRef: 'short-html-ref', links: Array(100).fill('https://example.com/long') };
+    const h = await harness(t, (_req, res) => json(res, envelope({ data: [{ url: 'https://example.com/', data }], nextCursor: 'next-row' })),
+        { NSTDATA_MAX_OUTPUT_CHARS: '1024' });
+    const result = await h.client.callTool({ name: 'nstdata_crawl_pages', arguments: { crawlId: 'existing', limit: 1 } });
+    assert.equal(result.structuredContent.error.recovery.page.data.markdownRef, undefined);
+    assert.equal(result.structuredContent.error.recovery.page.data.htmlRef, 'short-html-ref');
+    assert.ok(result.content[0].text.length <= 1024);
+    data = { ...data, htmlRef: 'prefix-fixture-token-private-reference' };
+    const sensitive = await h.client.callTool({ name: 'nstdata_crawl_pages', arguments: { crawlId: 'existing', limit: 1 } });
+    assert.equal(sensitive.structuredContent.error.code, 'SENSITIVE_OUTPUT');
+    assert.doesNotMatch(JSON.stringify(sensitive), /fixture-token|private-reference|next-row/);
+    assert.equal(h.requests.length, 2);
+});

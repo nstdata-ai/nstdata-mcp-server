@@ -11,11 +11,10 @@
   "mcpServers": {
     "nstdata": {
       "command": "npx",
-      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.1"],
+      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.2"],
       "env": {
         "NSTDATA_MODULES": "proxy",
-        "NSTDATA_PROXY_URL": "http://PROXY_USER:PROXY_PASSWORD@PROXY_HOST:PROXY_PORT",
-        "NSTDATA_PROXY_CHECK_URL": "https://api.nstdata.io/api/v2/public/utility/client-ip"
+        "NSTDATA_PROXY_URL": "http://PROXY_USER:PROXY_PASSWORD@PROXY_HOST:PROXY_PORT"
       }
     }
   }
@@ -23,13 +22,15 @@
 
 ```
 
-同时启用两模块时，在同一条目设置 `NSTDATA_MODULES=crawl,proxy` 并补充 `NSTDATA_API_TOKEN`。检测地址由操作者选择；上述 Nstdata 回显接口返回该次请求被观测到的 IP。
+同时启用两模块时，在同一条目设置 `NSTDATA_MODULES=crawl,proxy` 并补充 `NSTDATA_API_TOKEN`。启动不发检测请求；调用 `nstdata_proxy_check` 时才访问检测目标。
 
 | 变量 | 用途 |
 |---|---|
 | `NSTDATA_PROXY_URL` | 必填HTTP／HTTPS网关URL；需要时包含编码后的用户名密码 |
-| `NSTDATA_PROXY_CHECK_URL` | `nstdata_proxy_check` 的必填HTTP／HTTPS目标 |
+| `NSTDATA_PROXY_CHECK_URL` | 可选HTTP／HTTPS检测目标，默认为 `https://example.com/` |
 | `NSTDATA_PROXY_CA_FILE` | 可选PEM CA文件绝对路径，仅用于Proxy TLS |
+
+默认目标用于连通性检测，不返回出口 IP。需要出口 IP 时，将 `NSTDATA_PROXY_CHECK_URL` 设为 `https://api.nstdata.io/api/v2/public/utility/client-ip` 或你信任的 IP 回显目标。示例域名不提供监控可用性保证。
 
 使用完整的平台或PM Router连接，保留通道／地域／会话／任务的用户名语法。网关和目标各自可为HTTP或HTTPS；HTTPS目标使用CONNECT。不支持SOCKS代理。
 

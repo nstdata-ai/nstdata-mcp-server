@@ -11,24 +11,25 @@ Proxy-only requires no Crawl token. Use this client entry and replace the genera
   "mcpServers": {
     "nstdata": {
       "command": "npx",
-      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.1"],
+      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.2"],
       "env": {
         "NSTDATA_MODULES": "proxy",
-        "NSTDATA_PROXY_URL": "http://PROXY_USER:PROXY_PASSWORD@PROXY_HOST:PROXY_PORT",
-        "NSTDATA_PROXY_CHECK_URL": "https://api.nstdata.io/api/v2/public/utility/client-ip"
+        "NSTDATA_PROXY_URL": "http://PROXY_USER:PROXY_PASSWORD@PROXY_HOST:PROXY_PORT"
       }
     }
   }
 }
 ```
 
-For both modules, set `NSTDATA_MODULES=crawl,proxy` and add `NSTDATA_API_TOKEN` in this same entry. The check URL is operator-selected; the Nstdata echo endpoint above returns the IP observed for that request.
+For both modules, set `NSTDATA_MODULES=crawl,proxy` and add `NSTDATA_API_TOKEN` in this same entry. Startup sends no probe; only an explicit `nstdata_proxy_check` call accesses the check target.
 
 | Variable | Purpose |
 |---|---|
 | `NSTDATA_PROXY_URL` | Required HTTP/HTTPS gateway URL, including encoded username/password when needed |
-| `NSTDATA_PROXY_CHECK_URL` | Required HTTP/HTTPS target for `nstdata_proxy_check` |
+| `NSTDATA_PROXY_CHECK_URL` | Optional HTTP/HTTPS check target; defaults to `https://example.com/` |
 | `NSTDATA_PROXY_CA_FILE` | Optional absolute path to a PEM CA bundle for Proxy TLS only |
+
+The default target checks connectivity and does not echo the exit IP. To observe that IP, set `NSTDATA_PROXY_CHECK_URL` to `https://api.nstdata.io/api/v2/public/utility/client-ip` or an IP echo target you trust. The example domain offers no monitoring availability guarantee.
 
 Use the full generated Nstdata or PM Router URL. Preserve channel/region/session/task username syntax. Gateway and target can each be HTTP or HTTPS; HTTPS targets use CONNECT. SOCKS proxies are not supported.
 

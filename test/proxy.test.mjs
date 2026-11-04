@@ -3,11 +3,22 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { gzipSync, deflateSync, brotliCompressSync } from 'node:zlib';
 import { harness, inMemoryClient } from './helpers.mjs';
-import { listen } from './proxy-fixtures.mjs';
+import { listen, proxyFixture } from './proxy-fixtures.mjs';
 
 const settings = origin => ({ NSTDATA_MODULES: 'proxy', NSTDATA_API_TOKEN: '',
     NSTDATA_PROXY_URL: origin.replace('://', '://fixture-user:fixture-password@'),
     NSTDATA_PROXY_CHECK_URL: 'http://check.invalid/ip',
+});
+
+test('Proxy starts without a check target and probes the default only after an explicit call', { timeout: 10000 }, async t => {
+    const proxy = await proxyFixture(t, { connectStatus: 502 });
+    const client = await inMemoryClient(t, { NSTDATA_MODULES: 'proxy', NSTDATA_PROXY_URL: proxy.url });
+    assert.equal((await client.listTools()).tools.length, 2);
+    assert.equal(proxy.connections.length, 0);
+    const checked = await client.callTool({ name: 'nstdata_proxy_check', arguments: {} });
+    assert.equal(checked.isError, true);
+    assert.equal(checked.structuredContent.error.code, 'PROXY_CONNECT_FAILED');
+    assert.deepEqual(proxy.connections.map(connection => connection.authority), ['example.com:443']);
 });
 
 test('Proxy-only ignores disabled Crawl credentials and product settings', { timeout: 10000 }, async t => {

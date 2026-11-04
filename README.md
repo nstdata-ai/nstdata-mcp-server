@@ -22,6 +22,13 @@ Supports Node.js 22 (22.18 or later) and 24. The client template below can start
 npm install @nstdata-ai/mcp-server
 ```
 
+To inspect setup requirements or the installed version without credentials:
+
+```sh
+npx --yes @nstdata-ai/mcp-server --help
+npx --yes @nstdata-ai/mcp-server --version
+```
+
 ## Connect a client
 
 Add this entry to your client's MCP configuration and replace the Crawl token. Preserve other server entries. The client must be able to find Node.js and `npx` on PATH.
@@ -31,7 +38,7 @@ Add this entry to your client's MCP configuration and replace the Crawl token. P
   "mcpServers": {
     "nstdata": {
       "command": "npx",
-      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.1"],
+      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.2"],
       "env": {
         "NSTDATA_MODULES": "crawl",
         "NSTDATA_API_TOKEN": "YOUR_CRAWL_API_TOKEN"

@@ -94,6 +94,8 @@ Use paths to select discovered links; submit the seed separately as `url`. Addin
 
 Page inputs accept `limit` (1–100, default 10) and one of `afterCursor`/`beforeCursor`. Copy `nextCursor` or `prevCursor` unchanged. An empty page with a cursor is not the end; stop on repeated cursors or the caller's page/call limit. Aggregate completion does not mean every page succeeded. If a page list exceeds the output limit, repeat that read from the same input cursor with a smaller `limit` (down to 1), then continue using the successful response's cursor. Advancing past a withheld page would skip unread results.
 
+If one row still exceeds the cap, `error.recovery.page` retains its identity, status and available storage references when they fit the output budget. It is a summary, not the full row. Read the required references before using `error.recovery.continuation.nextCursor` or `prevCursor` to move past that row. Those cursors are omitted for multi-row errors or when no reference fits. If the summary cannot satisfy the request, stop and report the limit; do not skip the page or submit another crawl.
+
 ### Read a reference
 
 Pass the value of `data.markdownRef` as **`ref`**, with `format: "markdown"`:

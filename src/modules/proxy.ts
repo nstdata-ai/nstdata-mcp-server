@@ -25,10 +25,10 @@ export function registerProxyTools(server: McpServer, config: Config): void {
     server.registerTool('nstdata_proxy_fetch', {
         description: 'Read an HTTP(S) page through the configured proxy. Does not follow redirects or retry; may consume billable traffic.',
         inputSchema: z.strictObject({
-            url: z.url().max(8192).refine(value => { const url = new URL(value); return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password; }),
-            method: z.enum(['GET', 'HEAD']).default('GET'),
-            format: z.enum(['text', 'base64']).default('text'),
-            headers: targetHeaders.optional(),
+            url: z.url().max(8192).refine(value => { const url = new URL(value); return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password; }).describe('HTTP(S) target accessed through the configured proxy; no embedded credentials.'),
+            method: z.enum(['GET', 'HEAD']).default('GET').describe('GET returns content; HEAD requests response headers without a body.'),
+            format: z.enum(['text', 'base64']).default('text').describe('text requires UTF-8; base64 preserves binary bytes.'),
+            headers: targetHeaders.optional().describe('Optional target request headers. Send Authorization or Cookie only to trusted targets; proxy and connection headers are reserved.'),
         }),
         annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
     }, async (args, ctx) => guard(ctx, config, async options => {
@@ -41,7 +41,7 @@ export function registerProxyTools(server: McpServer, config: Config): void {
             isError: response.statusCode < 200 || response.statusCode >= 300 };
     }));
     server.registerTool('nstdata_proxy_check', {
-        description: 'Check the operator-configured target through the proxy, once.',
+        description: 'Check the proxy once against NSTDATA_PROXY_CHECK_URL, or https://example.com/ by default. Returns observedIp only when the target echoes a valid IP. Startup does not run this check.',
         inputSchema: z.strictObject({}),
         annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
     }, async (_args, ctx) => guard(ctx, config, async options => {
