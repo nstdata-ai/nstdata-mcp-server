@@ -96,6 +96,8 @@ Proxy 专用变量见 [proxy_zh.md](proxy_zh.md)。未启用的模块不要求�
 
 列表触发 `OUTPUT_LIMIT` 时，保持相同输入游标，减小 `limit` 至最小1后重新读取该页，再使用成功结果中的游标继续。不能跳过被隐藏的页面结果。
 
+若单条页面仍超限，`error.recovery.page` 会在输出预算允许时保留该行标识、状态及可用存储引用；它是摘要，不是完整页面结果。先读取所需引用，再用 `error.recovery.continuation.nextCursor` 或 `prevCursor` 移至该行之后或之前。多行超限或没有引用能放入预算时，不返回这些继续游标。摘要不能满足需求时，应停止并说明限制，不得跳过页面或重新提交整站任务。
+
 ### 引用读取
 
 把 `data.markdownRef` 的原值传给 **`ref`**，不是把 `markdownRef` 当作输入字段名：

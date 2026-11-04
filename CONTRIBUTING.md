@@ -13,10 +13,10 @@ For offline development, cache the complete locked dependency graph before runni
 
 ## Local package installation
 
-After the checks pass, run `npm pack` to build `nstdata-ai-mcp-server-1.0.1.tgz`. Install it from a separate application directory:
+After the checks pass, run `npm pack` to build `nstdata-ai-mcp-server-1.0.2.tgz`. Install it from a separate application directory:
 
 ```sh
-npm install --ignore-scripts /path/to/nstdata-ai-mcp-server-1.0.1.tgz
+npm install --ignore-scripts /path/to/nstdata-ai-mcp-server-1.0.2.tgz
 ```
 
 Configure the installed package using the README template; do not point clients at source files.

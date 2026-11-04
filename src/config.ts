@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { isAbsolute } from 'node:path';
 
+export const DEFAULT_PROXY_CHECK_URL = 'https://example.com/';
+
 const configuration = z.strictObject({
     apiToken: z.string().trim().min(1).optional(),
     baseURL: z.url().refine(value => {
@@ -32,7 +34,6 @@ const configuration = z.strictObject({
     if (config.modules.includes('crawl') && !config.apiToken) ctx.addIssue({ code: 'custom', path: ['apiToken'], message: 'Required for crawl' });
     if (config.modules.includes('proxy')) {
         if (!config.proxyURL) ctx.addIssue({ code: 'custom', path: ['proxyURL'], message: 'Required for proxy' });
-        if (!config.proxyCheckURL) ctx.addIssue({ code: 'custom', path: ['proxyCheckURL'], message: 'Required for proxy' });
     }
 });
 
@@ -65,7 +66,7 @@ function parseConfig(input: unknown, fromEnvironment: boolean): Config {
         if (fromEnvironment) throw new EnvironmentConfigError(fields);
         throw new Error(`Invalid configuration: ${fields.join(', ')}`);
     }
-    return result.data;
+    return { ...result.data, proxyCheckURL: result.data.proxyCheckURL ?? DEFAULT_PROXY_CHECK_URL };
 }
 
 export function validateConfig(input: unknown): Config {

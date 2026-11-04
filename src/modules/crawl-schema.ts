@@ -6,10 +6,10 @@ const milliseconds = z.number().int().min(0).max(600000);
 export const httpURL = z.url().max(8192).refine(value => {
     const url = new URL(value);
     return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password;
-}, 'Use an HTTP(S) URL without embedded credentials');
+}, 'Use an HTTP(S) URL without embedded credentials').describe('Target HTTP(S) URL without embedded credentials. For a site crawl this is the single seed URL.');
 export const identifier = z.string().trim().min(1).max(256)
     .refine(value => value !== '.' && value !== '..', 'Task IDs must not be . or ..');
-export const formats = z.array(z.enum(['markdown', 'html', 'links', 'pdf', 'screenshot', 'rawData'])).min(1).max(6).default(['markdown']);
+export const formats = z.array(z.enum(['markdown', 'html', 'links', 'pdf', 'screenshot', 'rawData'])).min(1).max(6).default(['markdown']).describe('Requested output formats. Large results may contain storage references instead of inline content.');
 
 const action = z.discriminatedUnion('type', [
     z.strictObject({ type: z.literal('click'), selector, waitSelector: selector.optional() }),
@@ -37,4 +37,4 @@ export const scrapeOptions = z.strictObject({
     removeSelectors: z.array(selector).max(100).optional(),
     targetSelector: selector.optional(),
     timeout: z.number().int().min(1000).max(60000).optional(),
-}).default({});
+}).default({}).describe('Optional Crawl service settings. Set onlyMainContent=false when full-page navigation is needed for link discovery.');

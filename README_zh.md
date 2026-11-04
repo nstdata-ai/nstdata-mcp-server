@@ -22,6 +22,13 @@
 npm install @nstdata-ai/mcp-server
 ```
 
+无需凭据即可查看配置要求和版本：
+
+```sh
+npx --yes @nstdata-ai/mcp-server --help
+npx --yes @nstdata-ai/mcp-server --version
+```
+
 ## 连接客户端
 
 在客户端 MCP 配置中添加以下条目并替换 Crawl Token，保留其他服务条目。客户端需要能够从 PATH 找到 Node.js 和 `npx`。
@@ -31,7 +38,7 @@ npm install @nstdata-ai/mcp-server
   "mcpServers": {
     "nstdata": {
       "command": "npx",
-      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.1"],
+      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.2"],
       "env": {
         "NSTDATA_MODULES": "crawl",
         "NSTDATA_API_TOKEN": "YOUR_CRAWL_API_TOKEN"

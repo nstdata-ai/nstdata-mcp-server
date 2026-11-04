@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url';
 import { cli } from './helpers.mjs';
 const { loadConfig, createServer } = await import(new URL('./server.js', pathToFileURL(cli)));
 const { validateConfig } = await import(new URL('./config.js', pathToFileURL(cli)));
+const version = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
 const validEnv = {
     NSTDATA_MODULES: 'crawl,proxy', NSTDATA_API_TOKEN: 'fixture-private-token',
@@ -54,6 +55,48 @@ test('Crawl requires a nonblank canonical token and Proxy-only configuration nee
         NSTDATA_PROXY_URL: validEnv.NSTDATA_PROXY_URL, NSTDATA_PROXY_CHECK_URL: validEnv.NSTDATA_PROXY_CHECK_URL });
     assert.equal(config.apiToken, undefined);
     assert.equal(config.modules, 'proxy');
+});
+
+test('Proxy defaults its check target while retaining explicit target validation and required proxy credentials', () => {
+    const config = loadConfig({ NSTDATA_MODULES: 'proxy', NSTDATA_PROXY_URL: validEnv.NSTDATA_PROXY_URL });
+    assert.equal(config.proxyCheckURL, 'https://example.com/');
+    assert.equal(validateConfig({ ...config, proxyCheckURL: undefined }).proxyCheckURL, 'https://example.com/');
+    assert.equal(loadConfig({ ...validEnv, NSTDATA_PROXY_CHECK_URL: 'https://target.invalid/check' }).proxyCheckURL, 'https://target.invalid/check');
+    assert.throws(() => loadConfig({ NSTDATA_MODULES: 'proxy' }), rejected(['NSTDATA_PROXY_URL']));
+    assert.throws(() => loadConfig({ ...validEnv, NSTDATA_PROXY_CHECK_URL: '' }), rejected(['NSTDATA_PROXY_CHECK_URL']));
+});
+
+test('CLI help and version require no credentials, CA access or network connections', { timeout: 15000 }, () => {
+    const preload = `import net from 'node:net'; import fs from 'node:fs';
+        net.Socket.prototype.connect = () => { throw new Error('Unexpected network connection'); };
+        fs.readFileSync = new Proxy(fs.readFileSync, { apply(target, receiver, args) {
+            if (String(args[0]).includes('fixture-private-ca.pem')) throw new Error('Unexpected CA access');
+            return Reflect.apply(target, receiver, args);
+        } });`;
+    for (const argument of ['--help', '--version']) {
+        const result = spawnSync(process.execPath, ['--import', `data:text/javascript,${encodeURIComponent(preload)}`, cli, argument], {
+            env: { NSTDATA_MODULES: 'crawl,proxy', NSTDATA_API_TOKEN: '', NSTDATA_PROXY_CA_FILE: '/fixture-private-ca.pem' },
+            encoding: 'utf8', timeout: 5000,
+        });
+        assert.equal(result.error, undefined);
+        assert.equal(result.status, 0);
+        assert.equal(result.stderr, '');
+        if (argument === '--version') assert.equal(result.stdout, `${version}\n`);
+        else {
+            assert.match(result.stdout, /Usage: nstdata-mcp-server/);
+            assert.match(result.stdout, /NSTDATA_API_TOKEN/);
+            assert.match(result.stdout, /NSTDATA_PROXY_URL/);
+            assert.match(result.stdout, /https:\/\/example.com\//);
+        }
+    }
+});
+
+test('CLI rejects unsupported arguments before startup without echoing their values', () => {
+    const result = spawnSync(process.execPath, [cli, '--fixture-private-unsupported'], { env: {}, encoding: 'utf8', timeout: 5000 });
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, '');
+    assert.equal(result.stderr, 'Unsupported arguments. Use --help for usage.\n');
 });
 
 test('programmatic configuration errors preserve internal field names without input values', () => {

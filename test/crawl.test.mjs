@@ -4,6 +4,20 @@ import http from 'node:http';
 import { listen } from './proxy-fixtures.mjs';
 import { harness, envelope, json, inMemoryClient } from './helpers.mjs';
 
+test('tool discovery explains reference values, bounded page counts and safe cursor use', { timeout: 10000 }, async t => {
+    const h = await harness(t, (_req, res) => res.end());
+    const tools = Object.fromEntries((await h.client.listTools()).tools.map(tool => [tool.name, tool]));
+    const properties = name => tools[name].inputSchema.properties;
+    assert.match(properties('nstdata_crawl_read_result').ref.description, /markdownRef/);
+    assert.match(properties('nstdata_crawl_read_result').offset.description, /Unicode code points/);
+    assert.match(properties('nstdata_crawl_read_result').length.description, /bytes/);
+    assert.match(properties('nstdata_crawl_start').maxPages.description, /upper bound/);
+    assert.match(properties('nstdata_crawl_pages').afterCursor.description, /OUTPUT_LIMIT/);
+    assert.match(properties('nstdata_crawl_pages').beforeCursor.description, /prevCursor/);
+    assert.match(properties('nstdata_crawl_scrape').mode.description, /async/);
+    assert.equal(h.requests.length, 0);
+});
+
 test('a failed submission status is a tool failure for both task-creating flows', { timeout: 10000 }, async t => {
     const h = await harness(t, (_req, res) => json(res, envelope({ id: 'failed-submission', status: 'failed' })));
     for (const request of [

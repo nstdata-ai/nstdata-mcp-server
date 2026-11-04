@@ -22,7 +22,7 @@ export async function harness(t, handler, settings = {}, era = 'legacy', executa
     await once(api, 'listening');
     const transport = new StdioClientTransport({
         command: process.execPath, args: [executable], stderr: 'pipe',
-        env: { NSTDATA_API_TOKEN: 'fixture-token', NSTDATA_API_BASE_URL: `http://127.0.0.1:${api.address().port}`,
+        env: { NODE_OPTIONS: process.env.NODE_OPTIONS, NSTDATA_API_TOKEN: 'fixture-token', NSTDATA_API_BASE_URL: `http://127.0.0.1:${api.address().port}`,
             ...(typeof settings === 'function' ? settings(`http://127.0.0.1:${api.address().port}`) : settings) },
     });
     let stderr = '';

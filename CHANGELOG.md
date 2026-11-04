@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.2
+
+- Preserve bounded page summaries and storage references when a single crawl result row exceeds the output limit; separate continuation cursors from unread page results.
+- Describe reference inputs, offset units, page bounds and cursor recovery in tool schemas.
+- Default Proxy checks to `https://example.com/`, with an optional target override and no requests during startup.
+- Add credential-free `--help` and `--version` commands; reject unsupported arguments without printing their values.
+
 ## 1.0.1
 
 - Provide six Crawl tools and two HTTP/HTTPS Proxy tools in one local stdio server, with independently enabled modules.

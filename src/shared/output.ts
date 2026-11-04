@@ -47,17 +47,45 @@ export function boundResult(result: CallToolResult, config: Config): CallToolRes
     }
 
     const recovery: Record<string, unknown> = {};
-    const error = { code: 'OUTPUT_LIMIT', message: 'Result exceeds the local output limit. Reduce source content or use a supported smaller page/chunk/reference. Do not automatically repeat a task submission.', recovery };
+    const pageList = Array.isArray(data.data);
+    const error = { code: 'OUTPUT_LIMIT', message: pageList
+        ? 'Page output exceeds the local limit. Retry with the same input cursor and a smaller limit. If recovery.page has the required references, read them before using recovery.continuation, which skips that page. Do not automatically repeat a task submission.'
+        : 'Result exceeds the local output limit. Reduce source content or use a supported smaller page/chunk/reference. Do not automatically repeat a task submission.', recovery };
     const add = (key: string, value: unknown) => {
-        if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') return;
+        if (value === undefined) return false;
         const candidate = { ...recovery, [key]: value };
-        if (JSON.stringify({ error: { ...error, recovery: candidate } }).length <= config.maxOutputChars) Object.assign(recovery, candidate);
+        if (JSON.stringify({ error: { ...error, recovery: candidate } }).length > config.maxOutputChars) return false;
+        Object.assign(recovery, candidate);
+        return true;
     };
-    for (const key of ['statusCode', 'id', 'taskId', 'crawlId', 'ref', 'format', 'offset', 'nextCursor', 'prevCursor']) add(key, data[key]);
-    if (data.data && typeof data.data === 'object' && !Array.isArray(data.data)) {
+    const scalar = (value: unknown) => typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
+    for (const key of ['statusCode', 'id', 'taskId', 'crawlId', 'ref', 'format', 'offset']) {
+        if (scalar(data[key])) add(key, data[key]);
+    }
+    if (Array.isArray(data.data)) {
+        if (data.data.length === 1 && data.data[0] && typeof data.data[0] === 'object') {
+            const page = data.data[0] as Record<string, unknown>;
+            const summary: Record<string, unknown> = {};
+            for (const key of ['id', 'taskId', 'url', 'status', 'success', 'errorCode']) {
+                if (scalar(page[key]) && add('page', { ...summary, [key]: page[key] })) summary[key] = page[key];
+            }
+            const content = page.data as Record<string, unknown> | undefined;
+            const references: Record<string, unknown> = {};
+            for (const key of ['markdownRef', 'htmlRef', 'pdfRef', 'screenshotRef', 'rawDataRef']) {
+                if (typeof content?.[key] === 'string' && content[key] && add('page', { ...summary, data: { ...references, [key]: content[key] } })) references[key] = content[key];
+            }
+            if (Object.keys(references).length) {
+                if (typeof content?.truncated === 'boolean') add('page', { ...summary, data: { ...references, truncated: content.truncated } });
+                const continuation = Object.fromEntries(['nextCursor', 'prevCursor']
+                    .filter(key => typeof data[key] === 'string' && data[key]).map(key => [key, data[key]]));
+                if (Object.keys(continuation).length) add('continuation', continuation);
+            }
+        }
+    } else if (data.data && typeof data.data === 'object') {
         const page = data.data as Record<string, unknown>;
-        for (const key of ['markdownRef', 'htmlRef', 'pdfRef', 'screenshotRef', 'rawDataRef']) add(key, page[key]);
-        add('truncated', page.truncated);
+        for (const key of ['markdownRef', 'htmlRef', 'pdfRef', 'screenshotRef', 'rawDataRef', 'truncated']) {
+            if (scalar(page[key])) add(key, page[key]);
+        }
     }
     const output = { error };
     return { isError: true, content: [{ type: 'text', text: JSON.stringify(output) }], structuredContent: output };
