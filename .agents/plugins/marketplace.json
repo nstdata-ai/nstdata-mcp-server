@@ -1,0 +1,20 @@
+{
+  "name": "nstdata",
+  "interface": {
+    "displayName": "Nstdata"
+  },
+  "plugins": [
+    {
+      "name": "nstdata",
+      "source": {
+        "source": "local",
+        "path": "./plugins/nstdata"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

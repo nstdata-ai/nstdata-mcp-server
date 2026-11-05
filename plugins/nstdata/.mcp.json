@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "nstdata": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.2"],
+      "env_vars": [
+        "NSTDATA_API_TOKEN",
+        "NSTDATA_MODULES",
+        "NSTDATA_PROXY_URL",
+        "NSTDATA_PROXY_CHECK_URL",
+        "NSTDATA_API_BASE_URL",
+        "NSTDATA_PROXY_CA_FILE",
+        "NSTDATA_HTTP_TIMEOUT_MS",
+        "NSTDATA_MAX_RESPONSE_BYTES",
+        "NSTDATA_MAX_OUTPUT_CHARS",
+        "NSTDATA_MAX_CRAWL_PAGES"
+      ]
+    }
+  }
+}
