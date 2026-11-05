@@ -101,9 +101,13 @@ claude mcp add --scope user --env 'NSTDATA_API_TOKEN=${NSTDATA_API_TOKEN:-}' \
 
 ### 可选 Cursor 插件
 
-在 Cursor 的插件设置中选择 **Add Marketplace → Import from GitHub**，填写 `https://github.com/nstdata-ai/nstdata-mcp-server.git`。导入后，从该市场安装 **Nstdata**；仅导入市场不会自动安装插件。
+在 Cursor 的插件设置中选择 **Add Marketplace → Import from GitHub**，填写 `https://github.com/nstdata-ai/nstdata-mcp-server.git`。导入后，从该市场安装 **Nstdata**；仅导入市场不会自动安装插件。在插件的安装作用域菜单选择 **Add for Myself**，确认已建立 **Private** 用户级安装后再配置。
 
-打开插件配置，保持 **Tool modules** 为 `crawl`，填写 **Nstdata API token**。只使用代理时选 `proxy` 并填写 HTTP(S) **Proxy URL**，无需 Crawl Token；同时使用时选 `crawl,proxy` 并提供两种凭据。重启连接，提交任务前分别确认6、2或8个工具。表单对敏感字段掩码；如果需要自行控制凭据存储，可改用[直接配置](#json-stdio-配置)，通过受保护的本地 `envFile` 加载。
+在 Cursor 3.24.18 中，仅按项目安装可能显示已安装，但保存配置时返回 `Plugin not installed` 或 `not_found`。需先添加用户级安装；更换 API Key 不能解决此安装记录错误。
+
+保存此市场配置会将填写的值提交给 Cursor 服务；**Project** 控制插件在哪个项目启用，不代表凭据只存本机。表单对敏感字段掩码。如果需要把凭据文件保留在本机，可使用[直接配置](#json-stdio-配置)和受保护的本地 `envFile`，不在市场设置中填写密钥。
+
+打开插件配置，保持 **Tool modules** 为 `crawl`，填写 **Nstdata API token**。只使用代理时选 `proxy` 并填写 HTTP(S) **Proxy URL**，无需 Crawl Token；同时使用时选 `crawl,proxy` 并提供两种凭据。重启连接，提交任务前分别确认6、2或8个工具。
 
 Cursor 优先使用进程继承的环境值；其中旧的或空的 `NSTDATA_API_TOKEN`、`NSTDATA_MODULES`、`NSTDATA_PROXY_URL` 可能覆盖表单。需从原来源移除冲突值后重启 Cursor。高级选项见[配置](#配置)和 [Proxy 配置](proxy_zh.md#配置)。
 

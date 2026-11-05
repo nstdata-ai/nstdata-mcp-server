@@ -101,9 +101,13 @@ For startup failures, check client diagnostics/stderr, supported Node versions, 
 
 ### Optional Cursor plugin
 
-In Cursor's plugin settings, choose **Add Marketplace → Import from GitHub** and enter `https://github.com/nstdata-ai/nstdata-mcp-server.git`. Install **Nstdata** from the imported marketplace; importing a marketplace alone does not install its plugins.
+In Cursor's plugin settings, choose **Add Marketplace → Import from GitHub** and enter `https://github.com/nstdata-ai/nstdata-mcp-server.git`. Install **Nstdata** from the imported marketplace; importing a marketplace alone does not install its plugins. In the plugin's install-scope menu, choose **Add for Myself** and confirm the **Private** user-level installation before configuring it.
 
-Open the plugin configuration. Leave **Tool modules** as `crawl` and enter your **Nstdata API token**. For Proxy only, select `proxy` and enter an HTTP(S) **Proxy URL**; no Crawl token is needed. For both, select `crawl,proxy` and provide both credentials. Restart the connection and verify six, two or eight tools respectively before submitting a task. Secret fields are masked in the form; use [direct configuration](#json-stdio-configuration) with a protected local `envFile` if you need to control credential storage yourself.
+In Cursor 3.24.18, a project-only installation can appear installed while saving its configuration returns `Plugin not installed` or `not_found`. Add the user-level installation first; changing the API key does not resolve this installation-record error.
+
+Saving this marketplace configuration sends the entered values to Cursor's service; **Project** controls where the plugin is enabled, not local-only credential storage. Fields are masked in the form. To keep credential files on this machine, use [direct configuration](#json-stdio-configuration) with a protected local `envFile` instead of entering secrets in marketplace settings.
+
+Open the plugin configuration. Leave **Tool modules** as `crawl` and enter your **Nstdata API token**. For Proxy only, select `proxy` and enter an HTTP(S) **Proxy URL**; no Crawl token is needed. For both, select `crawl,proxy` and provide both credentials. Restart the connection and verify six, two or eight tools respectively before submitting a task.
 
 Cursor resolves inherited environment values before plugin settings. An old or empty `NSTDATA_API_TOKEN`, `NSTDATA_MODULES` or `NSTDATA_PROXY_URL` in its process environment can override the form. Remove the conflicting value from that source and restart Cursor. Advanced options use the [configuration reference](#configuration) and [Proxy settings](proxy.md#configuration).
 
