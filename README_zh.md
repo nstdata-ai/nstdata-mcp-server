@@ -8,8 +8,17 @@
 
 需要 Node.js 22（22.18及以上）或24，并能从 PATH 找到 `npx`。从 [Nstdata 控制台](https://app.nstdata.io/)获取 Crawl API Key，选择对应客户端的配置格式；无需先安装到 Node.js 项目。
 
+| 客户端 | 接入方式 |
+|---|---|
+| Cursor | 下方 JSON 或[市场插件](docs/mcp_zh.md#可选-cursor-插件) |
+| Codex | 下方 TOML 或[市场插件](docs/mcp_zh.md#可选-codex-插件) |
+| Claude Code | [CLI 配置](docs/mcp_zh.md#claude-code-cli)或[市场插件](docs/mcp_zh.md#可选-claude-code-插件) |
+| Claude Desktop、Cline、Roo Code、Gemini CLI、Windsurf | [客户端配置](docs/mcp_zh.md#客户端接入) |
+| VS Code / GitHub Copilot | [IDE 与 CLI 配置](docs/mcp_zh.md#vs-code-与-github-copilot) |
+| OpenCode | [OpenCode 配置](docs/mcp_zh.md#opencode) |
+
 <details>
-<summary>Cursor 及其他使用 JSON 配置的 MCP 客户端</summary>
+<summary>Cursor 及使用 mcpServers JSON 的客户端</summary>
 
 在客户端 MCP 配置中添加以下条目，替换 Token 并保留其他服务。配置位置见[客户端接入](docs/mcp_zh.md#客户端接入)。
 

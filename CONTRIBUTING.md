@@ -27,9 +27,13 @@ Update both READMEs and both language versions of the relevant reference documen
 
 Verify license ownership, dependency availability, compatibility and maintainer authorization before publishing.
 
-## Codex plugin
+## Client plugins
 
 The repository marketplace is `.agents/plugins/marketplace.json`; its plugin lives in `plugins/nstdata`. Keep its pinned npm version aligned with the plugin version. Credentials belong in the user's Codex home `.env`, never in the plugin. Plugin changes require a real Codex install and fresh-conversation check; protocol tests alone do not cover client integration.
+
+Cursor uses `.cursor-plugin/marketplace.json`, `plugins/nstdata/.cursor-plugin/plugin.json` and `plugins/nstdata/mcp.json`. Preserve the separate Codex `.mcp.json`; Cursor does not use Codex's `env_vars` field. Missing optional credentials must resolve to empty strings so enabled-module validation fails before connecting upstream. Validate native marketplace import, plugin configuration and tool discovery separately from direct MCP setup. Keep secrets out of manifests and do not infer credential storage guarantees from masked fields.
+
+Claude Code uses `.claude-plugin/marketplace.json`, `plugins/nstdata/.claude-plugin/plugin.json` and `plugins/nstdata/claude.mcp.json`. Keep credentials in client-managed sensitive configuration. An explicit MCP file must override the same-named entry in the default `.mcp.json`. Adding a host-specific manifest requires checking that the other hosts still select their own manifests and configuration files.
 
 ## Releases
 

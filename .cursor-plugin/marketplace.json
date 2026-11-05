@@ -1,0 +1,12 @@
+{
+  "name": "nstdata",
+  "owner": {
+    "name": "Nstdata"
+  },
+  "plugins": [
+    {
+      "name": "nstdata",
+      "source": "./plugins/nstdata"
+    }
+  ]
+}

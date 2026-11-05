@@ -4,15 +4,114 @@
 
 ## 客户端接入
 
-请选择对应客户端。使用 JSON 配置的客户端可参考 [README_zh.md](../README_zh.md) 中的 stdio 模板。
+需要 Node.js 22（22.18及以上）或24，且 `npx` 位于 PATH。先从 [Nstdata 控制台](https://app.nstdata.io/)取得 Crawl API Key。以下方式都启动同一个固定为 `1.0.2` 的本地 stdio 服务，无需先安装项目依赖。
 
-- **Cursor：** 项目配置为 `.cursor/mcp.json`，用户配置为 `~/.cursor/mcp.json`。本地服务条目也可使用 `envFile` 指向受保护凭据文件的绝对路径，见 [Cursor MCP 文档](https://cursor.com/docs/mcp)。
-- **Codex：** 使用 [README_zh.md](../README_zh.md) 中的 TOML 配置，或选择[可选插件](#可选-codex-插件)。
-- **Claude Desktop：** 按[本地 MCP 接入文档](https://modelcontextprotocol.io/docs/develop/connect-local-servers)将条目合入客户端配置。
+每个客户端选择一个连接，保留其他服务条目。真实凭据保存在版本控制之外的受保护文件中，并限制访问。服务读取环境变量，本身不加载 `.env`；各客户端的配置格式和变量引用语法不同。
 
-标准配置通过 `npx` 启动安装包，保留其他服务条目。凭据不纳入版本控制。修改环境配置后重启该 MCP 服务。
+| 客户端 | 推荐入口 |
+|---|---|
+| Codex | [README_zh.md](../README_zh.md) 中的完整 TOML 配置，或[可选 Codex 插件](#可选-codex-插件) |
+| Cursor | 在用户 `~/.cursor/mcp.json` 或项目 `.cursor/mcp.json` 合入[JSON stdio 配置](#json-stdio-配置)；[官方文档](https://cursor.com/docs/mcp) |
+| Claude Code | 使用下方 [Claude Code CLI](#claude-code-cli) 命令 |
+| VS Code／GitHub Copilot | 选择下方 [IDE 或 Copilot CLI 配置](#vs-code-与-github-copilot) |
+| Cline | MCP Servers → Configure → Configure MCP Servers，合入[JSON 模板](#json-stdio-配置)；CLI 使用 `~/.cline/data/settings/cline_mcp_settings.json`；[官方文档](https://docs.cline.bot/mcp/mcp-overview) |
+| Roo Code | Edit Global MCP（`mcp_settings.json`）或 Edit Project MCP（`.roo/mcp.json`），合入[JSON 模板](#json-stdio-配置)；[官方文档](https://roocodeinc.github.io/Roo-Code/features/mcp/using-mcp-in-roo/) |
+| Gemini CLI | 在用户 `~/.gemini/settings.json` 或项目 `.gemini/settings.json` 合入[JSON 模板](#json-stdio-配置)；[官方文档](https://geminicli.com/docs/tools/mcp-server/) |
+| OpenCode | 使用下方 [OpenCode 配置](#opencode) |
+| Windsurf | 在用户 `~/.codeium/windsurf/mcp_config.json` 合入[JSON 模板](#json-stdio-配置)，保存后刷新 MCP 连接或重启 Windsurf；[手动配置依据](https://github.com/github/github-mcp-server/blob/main/docs/installation-guides/install-windsurf.md#manual-configuration) |
+| Claude Desktop | 按[本地 MCP 接入文档](https://modelcontextprotocol.io/docs/develop/connect-local-servers)合入 JSON 条目 |
 
-仅 Crawl 提供6个工具，仅 Proxy 提供2个，同时启用提供8个。提交任务前先确认工具发现成功。启动失败时查看客户端诊断或 stderr，依次核对受支持的 Node 版本、`npx` 可用性和必填环境变量。图形客户端找不到 `npx` 时，可改用它的绝对可执行路径，保留包名参数。
+### JSON stdio 配置
+
+对以 `mcpServers` 为根字段的客户端，将下列对象合入上表中的相应配置文件。只在本机受保护配置中替换 Token 占位值；若使用项目文件，不要提交真实 Token。这是直接 MCP 配置，不是插件市场导入。
+
+```json
+{
+  "mcpServers": {
+    "nstdata": {
+      "command": "npx",
+      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.2"],
+      "env": {
+        "NSTDATA_MODULES": "crawl",
+        "NSTDATA_API_TOKEN": "YOUR_CRAWL_API_TOKEN"
+      }
+    }
+  }
+}
+```
+
+Cursor 的本地服务也可通过 `envFile` 加载受保护凭据文件；使用绝对路径，并在从文件读取 Token 时移除 `env` 中的 Token 占位值。Gemini CLI 会过滤继承自宿主的敏感变量，因此保留显式的 `env.NSTDATA_API_TOKEN` 映射，不能只依赖继承。Gemini 的其他设置与 `mcpServers` 并存，勿覆盖。
+
+### Claude Code CLI
+
+使用[官方 stdio CLI](https://code.claude.com/docs/en/mcp)注册用户级服务。下列单引号中的值是带空串默认值的变量引用，不是真实 Key：
+
+```sh
+claude mcp add --scope user --env 'NSTDATA_API_TOKEN=${NSTDATA_API_TOKEN:-}' \
+  --transport stdio nstdata -- npx --yes @nstdata-ai/mcp-server@1.0.2
+```
+
+若当前终端已从受保护环境或凭据管理器取得 `NSTDATA_API_TOKEN`，从该终端启动 Claude Code；启动服务时会展开引用。若尚未配置环境变量，注册后、连接前打开用户 `~/.claude.json`，在这个受保护文件内将 `mcpServers.nstdata.env.NSTDATA_API_TOKEN` 改为真实 Key，保留现有命令及其他条目。这样不需要把真实 Key 写入终端历史。在 Claude Code 中用 `/mcp` 检查连接和工具；注册成功不等于启动或凭据验收通过。
+
+### VS Code 与 GitHub Copilot
+
+使用 VS Code 格式时，执行 **MCP: Open User Configuration**，将下列完整条目合入用户配置中的 `mcp.json`。工作区也可使用 `.vscode/mcp.json`，但真实凭据不能进入共享文件。该格式的根字段是 `servers`，不是 `mcpServers`：
+
+```json
+{
+  "servers": {
+    "nstdata": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.2"],
+      "env": {
+        "NSTDATA_MODULES": "crawl",
+        "NSTDATA_API_TOKEN": "YOUR_CRAWL_API_TOKEN"
+      }
+    }
+  }
+}
+```
+
+当前 VS Code 的 Copilot harness 或 GitHub Copilot CLI 使用上方 `mcpServers` 模板，放入 `~/.copilot/mcp-config.json`；设置了 `COPILOT_HOME` 时，使用该目录下的 `mcp-config.json`。IDE 中可进入 **Chat: Open Customizations → MCP Servers → Add Server**，选择 **Global > Copilot** 写入此位置；在受保护的用户文件内替换 Token。Portable 格式不支持 VS Code 的 `inputs` 或 `envFile`；需要交互输入的服务也不会转发给 Copilot harness。复制格式前参考[配置格式及 CLI 文档](https://code.visualstudio.com/docs/agents/reference/mcp-configuration)。为目标会话只启用一个 Nstdata 条目，不要为同一会话同时配置两种入口。
+
+### OpenCode
+
+在 `opencode.json` 或 `opencode.jsonc` 合入下列条目。OpenCode 使用 `mcp`、完整命令数组及 `environment`，与 `mcpServers`、分开的 `command`／`args` 和 `env` 不同。只在版本控制之外的受保护配置中替换 Token，见[官方 MCP 文档](https://opencode.ai/docs/mcp-servers/)。
+
+```json
+{
+  "mcp": {
+    "nstdata": {
+      "type": "local",
+      "command": ["npx", "--yes", "@nstdata-ai/mcp-server@1.0.2"],
+      "environment": {
+        "NSTDATA_MODULES": "crawl",
+        "NSTDATA_API_TOKEN": "YOUR_CRAWL_API_TOKEN"
+      },
+      "enabled": true
+    }
+  }
+}
+```
+
+修改配置后重启 MCP 连接。仅 Crawl 提供6个工具，仅 Proxy 提供2个，同时启用提供8个；提交任务前先确认工具发现成功。
+
+启动失败时查看客户端诊断或 stderr，核对受支持的 Node 版本、`npx` 可用性和必填环境变量。图形客户端找不到 `npx` 时，使用它的绝对可执行路径，保留包名参数。在终端改变量不一定会更新已运行的图形客户端；修改凭据来源后重启应用。
+
+### 可选 Cursor 插件
+
+在 Cursor 的插件设置中选择 **Add Marketplace → Import from GitHub**，填写 `https://github.com/nstdata-ai/nstdata-mcp-server.git`。导入后，从该市场安装 **Nstdata**；仅导入市场不会自动安装插件。在插件的安装作用域菜单选择 **Add for Myself**，确认已建立 **Private** 用户级安装后再配置。
+
+在 Cursor 3.24.18 中，仅按项目安装可能显示已安装，但保存配置时返回 `Plugin not installed` 或 `not_found`。需先添加用户级安装；更换 API Key 不能解决此安装记录错误。
+
+保存此市场配置会将填写的值提交给 Cursor 服务；**Project** 控制插件在哪个项目启用，不代表凭据只存本机。表单对敏感字段掩码。如果需要把凭据文件保留在本机，可使用[直接配置](#json-stdio-配置)和受保护的本地 `envFile`，不在市场设置中填写密钥。
+
+打开插件配置，保持 **Tool modules** 为 `crawl`，填写 **Nstdata API token**。只使用代理时选 `proxy` 并填写 HTTP(S) **Proxy URL**，无需 Crawl Token；同时使用时选 `crawl,proxy` 并提供两种凭据。重启连接，提交任务前分别确认6、2或8个工具。
+
+Cursor 优先使用进程继承的环境值；其中旧的或空的 `NSTDATA_API_TOKEN`、`NSTDATA_MODULES`、`NSTDATA_PROXY_URL` 可能覆盖表单。需从原来源移除冲突值后重启 Cursor。高级选项见[配置](#配置)和 [Proxy 配置](proxy_zh.md#配置)。
+
+通过 Cursor 的市场刷新／更新入口获取插件变更，再重启 MCP 连接。插件固定 npm 版本，仅更新 npm `latest` 不会更新插件。无需使用时，在插件设置中禁用或卸载 **Nstdata**。只保留一个 Nstdata 连接处于启用状态。若 GitHub 导入失败，可在排查导入错误期间使用直接 MCP 配置。
 
 ### 可选 Codex 插件
 
@@ -37,6 +136,26 @@ codex plugin add nstdata@nstdata
 ```
 
 若 CLI 不识别 `plugin`，先更新 CLI；桌面应用不会更新另行安装的 CLI。更新插件后新开对话。插件固定 MCP 版本，仅修改 npm 的 `latest` 不会改变它。禁用或卸载 **Nstdata** 会停止此连接并保留凭据文件；不再需要时，单独移除其中的 Nstdata 变量。
+
+### 可选 Claude Code 插件
+
+需要 Claude Code 2.1.237 或以上版本。此方式使用 Claude Code 的插件配置，启动同一个已发布 MCP 服务：
+
+```sh
+claude plugin marketplace add nstdata-ai/nstdata-mcp-server
+claude plugin install nstdata@nstdata
+```
+
+在 Claude Code 交互会话运行 `/plugin configure nstdata@nstdata`，保持 **Tool modules** 为 `crawl` 并填写 **Nstdata API token**。只使用代理时设置 `proxy` 并提供 HTTP(S) **Proxy URL**，无需 Crawl Token；同时使用时设置 `crawl,proxy` 并提供两种凭据。敏感配置由客户端管理，不把真实 Key 写入安装命令参数或 shell 历史。启用模块缺少凭据时，服务不会启动。
+
+新开会话或按提示重载，然后用 `/mcp` 确认6、2或8个工具。只保留一个 Nstdata 连接处于启用状态。更新时运行：
+
+```sh
+claude plugin marketplace update nstdata
+claude plugin update nstdata@nstdata
+```
+
+无需使用时，通过 `/plugin` 禁用或卸载。插件固定 MCP 版本，仅更新 npm `latest` 不会更新插件。详见 [Claude Code 插件命令](https://code.claude.com/docs/en/plugins/cli-reference#plugin-commands-in-a-session)。
 
 ## 配置
 
