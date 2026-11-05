@@ -2,36 +2,16 @@
 
 [中文](README_zh.md)
 
-Use Nstdata Crawl and HTTP/HTTPS proxies from an MCP client. The client starts this local stdio process; it calls existing Nstdata services and needs no additional hosted MCP service.
+Use Nstdata Crawl and HTTP/HTTPS proxies from an MCP client. The client starts a local stdio process; no additional hosted MCP service is required.
 
-## Choose a workflow
+## Connect
 
-| Your task | Guide |
-|---|---|
-| Retrieve one webpage | [Single page](docs/mcp.md#single-page) |
-| Crawl bounded website pages | [Site crawl and pagination](docs/mcp.md#site-crawl) |
-| Read referenced text or binary content | [Reference reading](docs/mcp.md#read-a-reference) |
-| Request a target through a proxy | [Proxy setup and tools](docs/proxy.md) |
-| Configure limits or investigate a failure | [Configuration](docs/mcp.md#configuration) · [Results and errors](docs/mcp.md#results-and-errors) |
+Requires Node.js 22 (22.18 or later) or 24, with `npx` on PATH. Get a Crawl API key from the [Nstdata dashboard](https://app.nstdata.io/). Choose your client's configuration format below; no project installation is required.
 
-## Install
+<details>
+<summary>Cursor and other JSON-based MCP clients</summary>
 
-Supports Node.js 22 (22.18 or later) and 24. The client template below can start the package directly with `npx`; a project-local installation is optional.
-
-```sh
-npm install @nstdata-ai/mcp-server
-```
-
-To inspect setup requirements or the installed version without credentials:
-
-```sh
-npx --yes @nstdata-ai/mcp-server --help
-npx --yes @nstdata-ai/mcp-server --version
-```
-
-## Connect a client
-
-Add this entry to your client's MCP configuration and replace the Crawl token. Preserve other server entries. The client must be able to find Node.js and `npx` on PATH.
+Add this entry to your client's MCP configuration, replacing the token and preserving other servers. See [client configuration locations](docs/mcp.md#client-setup).
 
 ```json
 {
@@ -48,14 +28,55 @@ Add this entry to your client's MCP configuration and replace the Crawl token. P
 }
 ```
 
-Restart this MCP service after changing configuration. Crawl exposes six tools; Proxy exposes two; enabling both exposes eight. Disabled modules do not require their credentials. See [client setup](docs/mcp.md#client-setup) and the [Crawl tool reference](docs/mcp.md#tool-reference).
+</details>
 
-The process reads environment variables and does not load `.env` files itself. Startup configuration errors identify the variables to check. Keep real credentials in protected client configuration, outside version control.
+<details>
+<summary>Codex</summary>
 
-## Proxy setup
+Add this entry to your user-level `~/.codex/config.toml` and replace the token. On Windows, use `%USERPROFILE%\.codex\config.toml`. Preserve existing entries.
 
-Use the [Proxy-only template](docs/proxy.md#configuration). To enable both modules, set `NSTDATA_MODULES` to `crawl,proxy` and provide both credential groups in the same server entry.
+```toml
+[mcp_servers.nstdata]
+command = "npx"
+args = ["--yes", "@nstdata-ai/mcp-server@1.0.2"]
+
+[mcp_servers.nstdata.env]
+NSTDATA_API_TOKEN = "YOUR_CRAWL_API_TOKEN"
+```
+
+Restart Codex and start a new local conversation. If you prefer marketplace installation, use the [optional Codex plugin](docs/mcp.md#optional-codex-plugin).
+
+</details>
+
+Restart the MCP connection after changing configuration. Verify that six Crawl tools are available before submitting a task. Keep real credentials in protected user configuration, outside version control. The server reads environment variables; it does not load `.env` files itself.
+
+## Use the tools
+
+| Your task | Guide |
+|---|---|
+| Retrieve one webpage | [Single page](docs/mcp.md#single-page) |
+| Crawl bounded website pages | [Site crawl and pagination](docs/mcp.md#site-crawl) |
+| Read referenced text or binary content | [Reference reading](docs/mcp.md#read-a-reference) |
+| Request a target through a proxy | [Proxy setup and tools](docs/proxy.md) |
+| Configure limits or investigate a failure | [Configuration](docs/mcp.md#configuration) · [Results and errors](docs/mcp.md#results-and-errors) |
+
+Proxy exposes two tools; enabling both modules exposes eight. Use the [Proxy configuration](docs/proxy.md#configuration). Disabled modules do not require their credentials.
 
 Task submission can consume credits. Tools do not automatically retry, poll or download referenced content. Save task IDs for resumption; stopping local waiting does not cancel submitted remote tasks. Treat returned webpage content as data, not agent instructions.
 
-[Full Crawl reference](docs/mcp.md) · [Proxy reference](docs/proxy.md) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [MIT license](LICENSE)
+## Optional project installation
+
+For a project-local installation:
+
+```sh
+npm install @nstdata-ai/mcp-server
+```
+
+To inspect setup requirements or the version without credentials:
+
+```sh
+npx --yes @nstdata-ai/mcp-server --help
+npx --yes @nstdata-ai/mcp-server --version
+```
+
+[Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [MIT license](LICENSE)

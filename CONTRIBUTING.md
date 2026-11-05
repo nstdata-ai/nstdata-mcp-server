@@ -27,6 +27,10 @@ Update both READMEs and both language versions of the relevant reference documen
 
 Verify license ownership, dependency availability, compatibility and maintainer authorization before publishing.
 
+## Codex plugin
+
+The repository marketplace is `.agents/plugins/marketplace.json`; its plugin lives in `plugins/nstdata`. Keep its pinned npm version aligned with the plugin version. Credentials belong in the user's Codex home `.env`, never in the plugin. Plugin changes require a real Codex install and fresh-conversation check; protocol tests alone do not cover client integration.
+
 ## Releases
 
 The `Publish npm` workflow runs only when manually dispatched from `main`, with the stable version in `package.json` and a full reviewed commit SHA. Checks produce one archive and its integrity manifest. The `npm-production` reviewer approves publication of those exact bytes. The workflow finishes when `npm publish` succeeds. Public availability may be delayed; registry integrity, installation and tool discovery are checked separately.

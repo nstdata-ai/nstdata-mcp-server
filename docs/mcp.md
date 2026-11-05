@@ -4,14 +4,39 @@
 
 ## Client setup
 
-Install the packages and use the stdio template in [README.md](../README.md).
+Choose your client below. JSON-based clients can use the stdio template in [README.md](../README.md).
 
 - **Cursor:** project configuration is `.cursor/mcp.json`; user configuration is `~/.cursor/mcp.json`. A local entry may use `envFile` with an absolute path to a protected credential file. See the [Cursor MCP guide](https://cursor.com/docs/mcp).
+- **Codex:** use the TOML entry in [README.md](../README.md), or the [optional plugin](#optional-codex-plugin).
 - **Claude Desktop:** follow the [local MCP setup guide](https://modelcontextprotocol.io/docs/develop/connect-local-servers) to merge the entry into the client configuration.
 
 The standard configuration uses `npx` to start the installed package. Preserve other server entries and keep credentials outside version control. Restart the MCP server after changing environment configuration.
 
 Crawl-only exposes six tools, Proxy-only two, and both modules eight. Verify tool discovery before submitting a task. Startup failures should be checked in client diagnostics/stderr: confirm the supported Node version, `npx` availability and required environment variables. If a graphical client cannot find `npx`, use its absolute executable path without changing the package argument.
+
+### Optional Codex plugin
+
+Direct MCP configuration in the [README](../README.md) is sufficient. Choose this alternative if you want Codex marketplace management; it starts the same published server, not another Crawl implementation.
+
+1. Add your key to the Codex home `~/.codex/.env` (`%USERPROFILE%\.codex\.env` on Windows, or `.env` under `CODEX_HOME` when set), preserving existing entries:
+
+   ```dotenv
+   NSTDATA_API_TOKEN=your-api-key
+   ```
+
+2. Fully quit and reopen Codex. Open **Settings → Plugins → Add → Add plugin marketplace**, set **Source** to `https://github.com/nstdata-ai/nstdata-mcp-server`, and leave **Git ref** and **Sparse paths** empty.
+3. Install **Nstdata** and start a new local conversation. Verify six Crawl tools before submitting a task. If a direct Nstdata server is already configured, keep only one connection enabled to avoid duplicate tools.
+
+The credential file is local plaintext; keep it outside version control and restrict access (for example, `chmod 600 ~/.codex/.env` on macOS/Linux). Codex loads it, and the plugin forwards the declared Nstdata variables. The server does not read the file itself. Values in this file override inherited environment values; restart Codex after edits. For Proxy or other settings, add the variables from the references below to this same file.
+
+To update with a CLI that supports `codex plugin`:
+
+```sh
+codex plugin marketplace upgrade nstdata
+codex plugin add nstdata@nstdata
+```
+
+Update the CLI first if it does not recognize `plugin`; a separately installed CLI is not updated with the desktop app. Start a new conversation after updating. The plugin pins the MCP version; npm `latest` alone does not change it. Disabling or uninstalling **Nstdata** stops this connection and retains the credential file; remove only the Nstdata variables separately when no longer needed.
 
 ## Configuration
 

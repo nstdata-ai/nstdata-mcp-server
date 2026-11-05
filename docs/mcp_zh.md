@@ -4,14 +4,39 @@
 
 ## 客户端接入
 
-安装后使用 [README_zh.md](../README_zh.md) 中的 stdio 配置。
+请选择对应客户端。使用 JSON 配置的客户端可参考 [README_zh.md](../README_zh.md) 中的 stdio 模板。
 
 - **Cursor：** 项目配置为 `.cursor/mcp.json`，用户配置为 `~/.cursor/mcp.json`。本地服务条目也可使用 `envFile` 指向受保护凭据文件的绝对路径，见 [Cursor MCP 文档](https://cursor.com/docs/mcp)。
+- **Codex：** 使用 [README_zh.md](../README_zh.md) 中的 TOML 配置，或选择[可选插件](#可选-codex-插件)。
 - **Claude Desktop：** 按[本地 MCP 接入文档](https://modelcontextprotocol.io/docs/develop/connect-local-servers)将条目合入客户端配置。
 
 标准配置通过 `npx` 启动安装包，保留其他服务条目。凭据不纳入版本控制。修改环境配置后重启该 MCP 服务。
 
 仅 Crawl 提供6个工具，仅 Proxy 提供2个，同时启用提供8个。提交任务前先确认工具发现成功。启动失败时查看客户端诊断或 stderr，依次核对受支持的 Node 版本、`npx` 可用性和必填环境变量。图形客户端找不到 `npx` 时，可改用它的绝对可执行路径，保留包名参数。
+
+### 可选 Codex 插件
+
+直接使用 [README 中的 MCP 配置](../README_zh.md)即可接入。需要通过 Codex 市场管理时，可选择此方式；它启动同一个已发布服务，不是另一套 Crawl 实现。
+
+1. 在 Codex 用户目录 `~/.codex/.env` 中添加 Key，保留原有配置。Windows 为 `%USERPROFILE%\.codex\.env`；设置了 `CODEX_HOME` 时，使用该目录下的 `.env`：
+
+   ```dotenv
+   NSTDATA_API_TOKEN=your-api-key
+   ```
+
+2. 完全退出并重新打开 Codex。进入 **Settings → Plugins → Add → Add plugin marketplace**，**Source** 填 `https://github.com/nstdata-ai/nstdata-mcp-server`，**Git ref** 和 **Sparse paths** 留空。
+3. 安装 **Nstdata** 后新开本地对话，提交任务前确认6个 Crawl 工具可用。若已有直接配置的 Nstdata 服务，只启用一个连接，避免工具重复。
+
+凭据文件为本地明文，应放在版本控制之外并限制访问，例如 macOS／Linux 上执行 `chmod 600 ~/.codex/.env`。由 Codex 加载该文件，插件仅透传声明的 Nstdata 变量；服务进程本身不读取文件。该文件中的值优先于继承的环境变量，修改后需重启 Codex。Proxy 或其他设置使用下方参考中的变量，添加到同一个文件即可。
+
+使用支持 `codex plugin` 的 CLI 更新：
+
+```sh
+codex plugin marketplace upgrade nstdata
+codex plugin add nstdata@nstdata
+```
+
+若 CLI 不识别 `plugin`，先更新 CLI；桌面应用不会更新另行安装的 CLI。更新插件后新开对话。插件固定 MCP 版本，仅修改 npm 的 `latest` 不会改变它。禁用或卸载 **Nstdata** 会停止此连接并保留凭据文件；不再需要时，单独移除其中的 Nstdata 变量。
 
 ## 配置
 
