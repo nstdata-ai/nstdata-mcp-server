@@ -4,15 +4,110 @@
 
 ## Client setup
 
-Choose your client below. JSON-based clients can use the stdio template in [README.md](../README.md).
+Requires Node.js 22 (22.18 or later) or 24, with `npx` on PATH. Get a Crawl API key from the [Nstdata dashboard](https://app.nstdata.io/). Every setup below starts the same local stdio server, pinned to `1.0.2`; no project installation is required.
 
-- **Cursor:** project configuration is `.cursor/mcp.json`; user configuration is `~/.cursor/mcp.json`. A local entry may use `envFile` with an absolute path to a protected credential file. See the [Cursor MCP guide](https://cursor.com/docs/mcp).
-- **Codex:** use the TOML entry in [README.md](../README.md), or the [optional plugin](#optional-codex-plugin).
-- **Claude Desktop:** follow the [local MCP setup guide](https://modelcontextprotocol.io/docs/develop/connect-local-servers) to merge the entry into the client configuration.
+Choose one connection per client and preserve other server entries. Keep populated credential files outside version control and restrict access. The server reads environment variables; it does not load `.env` files itself. Client configuration formats and variable-reference syntax differ.
 
-The standard configuration uses `npx` to start the installed package. Preserve other server entries and keep credentials outside version control. Restart the MCP server after changing environment configuration.
+| Client | Recommended entry point |
+|---|---|
+| Codex | The complete TOML entry in [README.md](../README.md), or the [optional Codex plugin](#optional-codex-plugin) |
+| Cursor | [JSON stdio configuration](#json-stdio-configuration) in user `~/.cursor/mcp.json` or project `.cursor/mcp.json`; [official guide](https://cursor.com/docs/mcp) |
+| Claude Code | The [Claude Code CLI](#claude-code-cli) command below |
+| VS Code / GitHub Copilot | Choose the [IDE or Copilot CLI configuration](#vs-code-and-github-copilot) below |
+| Cline | MCP Servers → Configure → Configure MCP Servers; merge the [JSON template](#json-stdio-configuration). The CLI uses `~/.cline/data/settings/cline_mcp_settings.json`; [official guide](https://docs.cline.bot/mcp/mcp-overview) |
+| Roo Code | Edit Global MCP (`mcp_settings.json`) or Edit Project MCP (`.roo/mcp.json`); use the [JSON template](#json-stdio-configuration); [official guide](https://roocodeinc.github.io/Roo-Code/features/mcp/using-mcp-in-roo/) |
+| Gemini CLI | Merge the [JSON template](#json-stdio-configuration) into user `~/.gemini/settings.json` or project `.gemini/settings.json`; [official guide](https://geminicli.com/docs/tools/mcp-server/) |
+| OpenCode | Use the [OpenCode configuration](#opencode) below |
+| Windsurf | Merge the [JSON template](#json-stdio-configuration) into user `~/.codeium/windsurf/mcp_config.json`, then refresh the MCP connection or restart Windsurf; [manual configuration reference](https://github.com/github/github-mcp-server/blob/main/docs/installation-guides/install-windsurf.md#manual-configuration) |
+| Claude Desktop | Merge the JSON entry following the [local MCP setup guide](https://modelcontextprotocol.io/docs/develop/connect-local-servers) |
 
-Crawl-only exposes six tools, Proxy-only two, and both modules eight. Verify tool discovery before submitting a task. Startup failures should be checked in client diagnostics/stderr: confirm the supported Node version, `npx` availability and required environment variables. If a graphical client cannot find `npx`, use its absolute executable path without changing the package argument.
+### JSON stdio configuration
+
+For clients whose configuration uses `mcpServers`, merge this object into the appropriate file above. Replace the token placeholder only in your protected local configuration. If using a project file, do not commit its real token. This is direct MCP configuration, not a plugin marketplace import.
+
+```json
+{
+  "mcpServers": {
+    "nstdata": {
+      "command": "npx",
+      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.2"],
+      "env": {
+        "NSTDATA_MODULES": "crawl",
+        "NSTDATA_API_TOKEN": "YOUR_CRAWL_API_TOKEN"
+      }
+    }
+  }
+}
+```
+
+Cursor can alternatively load a protected credential file through a local server's `envFile`; use an absolute path and remove the placeholder token from `env` when taking the token from that file. Gemini CLI filters sensitive variables inherited from the host, so keep the explicit `env.NSTDATA_API_TOKEN` mapping; do not rely on inheritance alone. Preserve unrelated Gemini settings alongside `mcpServers`.
+
+### Claude Code CLI
+
+Register the server in user scope with the [official stdio CLI](https://code.claude.com/docs/en/mcp). The quoted value below is a variable reference with an empty fallback, not the real key:
+
+```sh
+claude mcp add --scope user --env 'NSTDATA_API_TOKEN=${NSTDATA_API_TOKEN:-}' \
+  --transport stdio nstdata -- npx --yes @nstdata-ai/mcp-server@1.0.2
+```
+
+If your terminal already receives `NSTDATA_API_TOKEN` from your protected environment or secret manager, run Claude Code from that terminal; the reference resolves when it starts the server. Otherwise, after registration and before connecting, open user `~/.claude.json` and set `mcpServers.nstdata.env.NSTDATA_API_TOKEN` to your real key in that protected file. Keep the existing command and other entries. This avoids putting the real key in shell history. In Claude Code, use `/mcp` to check the connection and tools. Registration alone does not verify startup or credentials.
+
+### VS Code and GitHub Copilot
+
+For the VS Code configuration format, run **MCP: Open User Configuration** and merge this complete entry into the user-profile `mcp.json`. A workspace may instead use `.vscode/mcp.json`; keep credentials out of shared files. This format uses `servers`, not `mcpServers`:
+
+```json
+{
+  "servers": {
+    "nstdata": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.2"],
+      "env": {
+        "NSTDATA_MODULES": "crawl",
+        "NSTDATA_API_TOKEN": "YOUR_CRAWL_API_TOKEN"
+      }
+    }
+  }
+}
+```
+
+For the Copilot harness in current VS Code or GitHub Copilot CLI, use the portable `mcpServers` template above in `~/.copilot/mcp-config.json` (or `mcp-config.json` under `COPILOT_HOME` when set). In the IDE, **Chat: Open Customizations → MCP Servers → Add Server** lets you choose **Global > Copilot** for this destination. Replace the token in the protected user file. Portable configuration does not support VS Code `inputs` or `envFile`; VS Code does not forward servers requiring interactive input to the Copilot harness. See the [configuration formats and CLI reference](https://code.visualstudio.com/docs/agents/reference/mcp-configuration) before copying settings between formats. Enable one Nstdata entry in the intended session, rather than configuring both destinations for the same session.
+
+### OpenCode
+
+Merge this entry into `opencode.json` or `opencode.jsonc`. OpenCode uses `mcp`, a command array and `environment` instead of `mcpServers`, separate `command`/`args` and `env`. Replace the token only in a protected configuration outside version control; see the [official MCP guide](https://opencode.ai/docs/mcp-servers/).
+
+```json
+{
+  "mcp": {
+    "nstdata": {
+      "type": "local",
+      "command": ["npx", "--yes", "@nstdata-ai/mcp-server@1.0.2"],
+      "environment": {
+        "NSTDATA_MODULES": "crawl",
+        "NSTDATA_API_TOKEN": "YOUR_CRAWL_API_TOKEN"
+      },
+      "enabled": true
+    }
+  }
+}
+```
+
+Restart the MCP connection after configuration changes. Crawl-only exposes six tools, Proxy-only two, and both modules eight. Verify tool discovery before submitting a task.
+
+For startup failures, check client diagnostics/stderr, supported Node versions, `npx` availability and required environment variables. If a graphical client cannot find `npx`, use its absolute executable path without changing the package argument. Changing a terminal variable does not necessarily update an already running graphical client; restart it after changing its credential source.
+
+### Optional Cursor plugin
+
+In Cursor's plugin settings, choose **Add Marketplace → Import from GitHub** and enter `https://github.com/nstdata-ai/nstdata-mcp-server.git`. Install **Nstdata** from the imported marketplace; importing a marketplace alone does not install its plugins.
+
+Open the plugin configuration. Leave **Tool modules** as `crawl` and enter your **Nstdata API token**. For Proxy only, select `proxy` and enter an HTTP(S) **Proxy URL**; no Crawl token is needed. For both, select `crawl,proxy` and provide both credentials. Restart the connection and verify six, two or eight tools respectively before submitting a task. Secret fields are masked in the form; use [direct configuration](#json-stdio-configuration) with a protected local `envFile` if you need to control credential storage yourself.
+
+Cursor resolves inherited environment values before plugin settings. An old or empty `NSTDATA_API_TOKEN`, `NSTDATA_MODULES` or `NSTDATA_PROXY_URL` in its process environment can override the form. Remove the conflicting value from that source and restart Cursor. Advanced options use the [configuration reference](#configuration) and [Proxy settings](proxy.md#configuration).
+
+Use Cursor's marketplace refresh/update controls to receive plugin changes, then restart the MCP connection. The plugin pins the npm version; changing npm `latest` alone does not update it. Disable or uninstall **Nstdata** from plugin settings when no longer needed. Keep only one Nstdata connection enabled. If GitHub import fails, use direct MCP configuration while investigating the import error.
 
 ### Optional Codex plugin
 

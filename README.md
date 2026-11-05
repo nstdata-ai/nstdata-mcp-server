@@ -8,8 +8,17 @@ Use Nstdata Crawl and HTTP/HTTPS proxies from an MCP client. The client starts a
 
 Requires Node.js 22 (22.18 or later) or 24, with `npx` on PATH. Get a Crawl API key from the [Nstdata dashboard](https://app.nstdata.io/). Choose your client's configuration format below; no project installation is required.
 
+| Client | Setup |
+|---|---|
+| Cursor | JSON below or the [marketplace plugin](docs/mcp.md#optional-cursor-plugin) |
+| Codex | TOML below or the [marketplace plugin](docs/mcp.md#optional-codex-plugin) |
+| Claude Code | [CLI setup](docs/mcp.md#claude-code-cli) |
+| Claude Desktop, Cline, Roo Code, Gemini CLI, Windsurf | [Client configuration](docs/mcp.md#client-setup) |
+| VS Code / GitHub Copilot | [IDE and CLI configuration](docs/mcp.md#vs-code-and-github-copilot) |
+| OpenCode | [OpenCode configuration](docs/mcp.md#opencode) |
+
 <details>
-<summary>Cursor and other JSON-based MCP clients</summary>
+<summary>Cursor and clients using mcpServers JSON</summary>
 
 Add this entry to your client's MCP configuration, replacing the token and preserving other servers. See [client configuration locations](docs/mcp.md#client-setup).
 

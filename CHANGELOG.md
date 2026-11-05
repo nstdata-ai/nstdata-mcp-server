@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add Cursor marketplace installation with module selection and masked credential fields.
+- Document client-specific setup for Claude Code, VS Code, GitHub Copilot, Cline, Roo Code, Gemini CLI, Windsurf and OpenCode.
+
 ## 1.0.2
 
 - Preserve bounded page summaries and storage references when a single crawl result row exceeds the output limit; separate continuation cursors from unread page results.

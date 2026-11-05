@@ -7,7 +7,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { promisify } from 'node:util';
-import { shellCommands } from './documentation.mjs';
+import { shellCommands, clientConfigurations } from './documentation.mjs';
 import { verifyStartup } from './check-startup.mjs';
 
 const execute = promisify(execFile);
@@ -108,6 +108,20 @@ net.Socket.prototype.connect=function(...args){
                     version: manifest.version, toolNames: config.env.NSTDATA_MODULES.split(',').flatMap(module => module === 'crawl' ? crawlTools : proxyTools) });
                 assert.equal(registryRequests.length, before, 'Installed npx must not resolve another package');
                 assert.equal(businessRequests, 0, 'Startup/discovery must not call a business API');
+            }
+            const reference = fs.readFileSync(path.join(root, index ? 'docs/mcp_zh.md' : 'docs/mcp.md'), 'utf8');
+            const clients = clientConfigurations(reference);
+            assert.equal(clients.length, 3);
+            for (const config of clients) {
+                assert.equal(config.command, 'npx');
+                assert.deepEqual(config.args, ['--yes', `${manifest.name}@${manifest.version}`]);
+                assert.equal(config.env.NSTDATA_API_TOKEN, 'YOUR_CRAWL_API_TOKEN');
+                const before = registryRequests.length;
+                await verifyStartup({ command: config.command, args: config.args, cwd: application,
+                    env: { ...localEnv, ...config.env, NSTDATA_API_TOKEN: 'fixture-token',
+                        NSTDATA_API_BASE_URL: origin }, version: manifest.version, toolNames: crawlTools });
+                assert.equal(registryRequests.length, before, 'Documented client configuration must use the installed package');
+                assert.equal(businessRequests, 0, 'Client configuration discovery must not call a business API');
             }
             const fresh = fs.mkdtempSync(path.join(tmpdir(), 'nstdata-mcp-first-use-'));
             freshApplications.push(fresh);

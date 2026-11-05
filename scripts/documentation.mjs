@@ -29,13 +29,30 @@ export function shellCommands(text) {
             if (continued) assert.match(line, /\s\\$/, 'Line continuation must follow a complete argument');
             words.push(...literalWords(continued ? line.trimEnd().slice(0, -1) : line));
             if (continued) continue;
-            assert.ok(['npm', 'npx', 'node', 'codex'].includes(words[0]), 'Unsupported documentation executable');
+            assert.ok(['npm', 'npx', 'node', 'codex', 'claude'].includes(words[0]), 'Unsupported documentation executable');
             commands.push(words);
             words = [];
         }
         assert.equal(words.length, 0, 'Unfinished documentation command continuation');
     }
     return commands;
+}
+
+export function clientConfigurations(text) {
+    return codeBlocks(text).filter(token => token.lang === 'json').map(token => JSON.parse(token.text))
+        .filter(value => value.mcpServers || value.servers || value.mcp).map(value => {
+            if (value.mcpServers) return value.mcpServers.nstdata;
+            if (value.servers) {
+                assert.equal(value.servers.nstdata.type, 'stdio');
+                const { type, ...server } = value.servers.nstdata;
+                return server;
+            }
+            const server = value.mcp.nstdata;
+            assert.equal(server.type, 'local');
+            assert.equal(server.enabled, true);
+            assert.ok(Array.isArray(server.command));
+            return { command: server.command[0], args: server.command.slice(1), env: server.environment };
+        });
 }
 
 export function checkMarkdown(text, filename) {
