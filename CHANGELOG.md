@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Add Cursor marketplace installation with module selection and masked credential fields.
+- Add Claude Code marketplace installation with client-managed module and credential configuration.
 - Document client-specific setup for Claude Code, VS Code, GitHub Copilot, Cline, Roo Code, Gemini CLI, Windsurf and OpenCode.
 
 ## 1.0.2

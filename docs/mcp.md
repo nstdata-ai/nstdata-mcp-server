@@ -137,6 +137,26 @@ codex plugin add nstdata@nstdata
 
 Update the CLI first if it does not recognize `plugin`; a separately installed CLI is not updated with the desktop app. Start a new conversation after updating. The plugin pins the MCP version; npm `latest` alone does not change it. Disabling or uninstalling **Nstdata** stops this connection and retains the credential file; remove only the Nstdata variables separately when no longer needed.
 
+### Optional Claude Code plugin
+
+Use Claude Code 2.1.237 or later. This alternative uses Claude Code's plugin configuration and starts the same published MCP server:
+
+```sh
+claude plugin marketplace add nstdata-ai/nstdata-mcp-server
+claude plugin install nstdata@nstdata
+```
+
+In an interactive Claude Code session, run `/plugin configure nstdata@nstdata`. Leave **Tool modules** as `crawl` and enter your **Nstdata API token**. For Proxy only, set `proxy` and provide an HTTP(S) **Proxy URL**; a Crawl token is not required. For both, set `crawl,proxy` and provide both credentials. The client manages sensitive configuration; do not put real keys in installation command arguments or shell history. Missing credentials for an enabled module prevent startup.
+
+Start a new session or reload as prompted, then use `/mcp` to verify six, two or eight tools. Keep only one Nstdata connection enabled. To update:
+
+```sh
+claude plugin marketplace update nstdata
+claude plugin update nstdata@nstdata
+```
+
+Use `/plugin` to disable or uninstall the plugin when no longer needed. The plugin pins the MCP version; changing npm `latest` alone does not update it. See the [Claude Code plugin commands](https://code.claude.com/docs/en/plugins/cli-reference#plugin-commands-in-a-session).
+
 ## Configuration
 
 | Variable | Default | Constraint |

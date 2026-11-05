@@ -1,0 +1,13 @@
+{
+  "name": "nstdata",
+  "owner": {
+    "name": "Nstdata"
+  },
+  "description": "Nstdata Crawl and Proxy tools for Claude Code.",
+  "plugins": [
+    {
+      "name": "nstdata",
+      "source": "./plugins/nstdata"
+    }
+  ]
+}

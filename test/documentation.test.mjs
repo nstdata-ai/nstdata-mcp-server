@@ -30,6 +30,30 @@ test('Cursor marketplace resolves its own plugin and credential configuration', 
     assert.equal(plugin.variables.properties.NSTDATA_MODULES.default, 'crawl');
 });
 
+test('Claude Code marketplace uses its own MCP file and module-dependent credentials', () => {
+    const read = file => JSON.parse(fs.readFileSync(new URL('../' + file, import.meta.url), 'utf8'));
+    const market = read('.claude-plugin/marketplace.json');
+    assert.equal(market.name, 'nstdata');
+    assert.deepEqual(market.plugins.map(plugin => [plugin.name, plugin.source]),
+        [['nstdata', './plugins/nstdata']]);
+    const plugin = read('plugins/nstdata/.claude-plugin/plugin.json');
+    assert.equal(plugin.name, 'nstdata');
+    assert.equal(plugin.mcpServers, './claude.mcp.json');
+    const { nstdata: server } = read('plugins/nstdata/claude.mcp.json').mcpServers;
+    assert.equal(server.command, 'npx');
+    assert.deepEqual(server.args, ['--yes', `@nstdata-ai/mcp-server@${plugin.version}`]);
+    assert.equal(server.env_vars, undefined);
+    assert.equal(plugin.userConfig.NSTDATA_MODULES.default, 'crawl');
+    for (const name of ['NSTDATA_MODULES', 'NSTDATA_API_TOKEN', 'NSTDATA_PROXY_URL']) {
+        assert.equal(server.env[name], '${user_config.' + name + '}');
+        assert.notEqual(plugin.userConfig[name].required, true);
+    }
+    for (const name of ['NSTDATA_API_TOKEN', 'NSTDATA_PROXY_URL']) {
+        assert.equal(plugin.userConfig[name].sensitive, true);
+        assert.equal(plugin.userConfig[name].default, '');
+    }
+});
+
 test('Codex plugin starts the pinned package and forwards required and optional configuration', () => {
     const read = file => JSON.parse(fs.readFileSync(new URL('../' + file, import.meta.url), 'utf8'));
     const market = read('.agents/plugins/marketplace.json');
@@ -81,7 +105,11 @@ test('bilingual client setup preserves the pinned command, credential mapping an
             ['claude', 'mcp', 'add', '--scope', 'user', '--env', 'NSTDATA_API_TOKEN=${NSTDATA_API_TOKEN:-}',
                 '--transport', 'stdio', 'nstdata', '--', 'npx', '--yes', '@nstdata-ai/mcp-server@1.0.2'],
             ['codex', 'plugin', 'marketplace', 'upgrade', 'nstdata'],
-            ['codex', 'plugin', 'add', 'nstdata@nstdata']]);
+            ['codex', 'plugin', 'add', 'nstdata@nstdata'],
+            ['claude', 'plugin', 'marketplace', 'add', 'nstdata-ai/nstdata-mcp-server'],
+            ['claude', 'plugin', 'install', 'nstdata@nstdata'],
+            ['claude', 'plugin', 'marketplace', 'update', 'nstdata'],
+            ['claude', 'plugin', 'update', 'nstdata@nstdata']]);
         const blocks = [...text.matchAll(/```dotenv\n([\s\S]*?)```/g)].map(block => parseEnv(block[1]));
         assert.deepEqual(blocks, [{ NSTDATA_API_TOKEN: 'your-api-key' }]);
         assert.equal(loadConfig(blocks[0]).modules, 'crawl');

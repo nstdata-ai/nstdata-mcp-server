@@ -1,0 +1,31 @@
+{
+  "name": "nstdata",
+  "version": "1.0.2",
+  "description": "Retrieve web content and use HTTP/HTTPS proxies through Nstdata.",
+  "author": {
+    "name": "Nstdata"
+  },
+  "mcpServers": "./claude.mcp.json",
+  "userConfig": {
+    "NSTDATA_MODULES": {
+      "type": "string",
+      "title": "Tool modules",
+      "description": "crawl, proxy, or crawl,proxy.",
+      "default": "crawl"
+    },
+    "NSTDATA_API_TOKEN": {
+      "type": "string",
+      "title": "Nstdata API token",
+      "description": "Required when Crawl is enabled.",
+      "sensitive": true,
+      "default": ""
+    },
+    "NSTDATA_PROXY_URL": {
+      "type": "string",
+      "title": "Proxy URL",
+      "description": "Required when Proxy is enabled.",
+      "sensitive": true,
+      "default": ""
+    }
+  }
+}

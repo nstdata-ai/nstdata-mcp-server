@@ -137,6 +137,26 @@ codex plugin add nstdata@nstdata
 
 若 CLI 不识别 `plugin`，先更新 CLI；桌面应用不会更新另行安装的 CLI。更新插件后新开对话。插件固定 MCP 版本，仅修改 npm 的 `latest` 不会改变它。禁用或卸载 **Nstdata** 会停止此连接并保留凭据文件；不再需要时，单独移除其中的 Nstdata 变量。
 
+### 可选 Claude Code 插件
+
+需要 Claude Code 2.1.237 或以上版本。此方式使用 Claude Code 的插件配置，启动同一个已发布 MCP 服务：
+
+```sh
+claude plugin marketplace add nstdata-ai/nstdata-mcp-server
+claude plugin install nstdata@nstdata
+```
+
+在 Claude Code 交互会话运行 `/plugin configure nstdata@nstdata`，保持 **Tool modules** 为 `crawl` 并填写 **Nstdata API token**。只使用代理时设置 `proxy` 并提供 HTTP(S) **Proxy URL**，无需 Crawl Token；同时使用时设置 `crawl,proxy` 并提供两种凭据。敏感配置由客户端管理，不把真实 Key 写入安装命令参数或 shell 历史。启用模块缺少凭据时，服务不会启动。
+
+新开会话或按提示重载，然后用 `/mcp` 确认6、2或8个工具。只保留一个 Nstdata 连接处于启用状态。更新时运行：
+
+```sh
+claude plugin marketplace update nstdata
+claude plugin update nstdata@nstdata
+```
+
+无需使用时，通过 `/plugin` 禁用或卸载。插件固定 MCP 版本，仅更新 npm `latest` 不会更新插件。详见 [Claude Code 插件命令](https://code.claude.com/docs/en/plugins/cli-reference#plugin-commands-in-a-session)。
+
 ## 配置
 
 | 变量 | 默认值 | 约束 |
