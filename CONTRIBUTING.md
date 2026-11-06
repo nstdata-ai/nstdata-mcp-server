@@ -18,9 +18,10 @@ With `redis-server` on PATH, run the storage integration checks after building:
 ```sh
 npm run build
 npm run test:redis
+npm run test:remote
 ```
 
-The checks start an isolated Redis process with TCP disabled and connect through its temporary Unix socket. They cover concurrent token consumption, revocation, delayed writes, credential encryption and expiry, then remove their own process and temporary files. They do not connect to an existing Redis instance or use real credentials. This suite requires Linux or macOS and also runs in CI.
+The checks start an isolated Redis process with TCP disabled and connect through its temporary Unix socket. They cover concurrent token consumption, revocation, delayed writes, credential encryption and expiry. Remote checks also exercise the actual authorization form, PKCE, refresh rotation and MCP calls against loopback and synthetic services. Both suites remove their own processes and temporary files, use no real credentials, require Linux or macOS and run in CI.
 
 ## Local package installation
 
