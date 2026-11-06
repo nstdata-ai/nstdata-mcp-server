@@ -4,6 +4,8 @@
 
 通过 MCP 客户端使用 Nstdata Crawl 和 HTTP／HTTPS 代理。客户端启动本地 stdio 进程，无需另行部署 MCP 后台。
 
+需要部署 HTTPS 服务的维护者请阅读[自托管指南](docs/remote_zh.md)。
+
 ## 接入
 
 需要 Node.js 22（22.18及以上）或24，并能从 PATH 找到 `npx`。从 [Nstdata 控制台](https://app.nstdata.io/)获取 Crawl API Key，选择对应客户端的配置格式；无需先安装到 Node.js 项目。

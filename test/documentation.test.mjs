@@ -6,7 +6,7 @@ import { loadConfig } from '../dist/config.js';
 import { parseEnv } from 'node:util';
 
 const documents = ['README.md', 'README_zh.md', 'CONTRIBUTING.md', 'CHANGELOG.md', 'SECURITY.md',
-    'docs/mcp.md', 'docs/mcp_zh.md', 'docs/proxy.md', 'docs/proxy_zh.md'];
+    'docs/mcp.md', 'docs/mcp_zh.md', 'docs/proxy.md', 'docs/proxy_zh.md', 'docs/remote.md', 'docs/remote_zh.md'];
 
 test('Cursor marketplace resolves its own plugin and credential configuration', () => {
     const read = file => JSON.parse(fs.readFileSync(new URL('../' + file, import.meta.url), 'utf8'));

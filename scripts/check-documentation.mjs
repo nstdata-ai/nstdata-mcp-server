@@ -61,6 +61,8 @@ export async function checkDocumentedSetup({ root, temp, archive, manifest, lock
         entries.push({ manifest: pkg, archive: dependencyArchive, filename: `dependency-${entries.length}.tgz`, source: installed });
     }
     const registryRequests = [];
+    const optionalPeers = new Set(entries.flatMap(entry => Object.entries(entry.manifest.peerDependenciesMeta ?? {})
+        .filter(([, settings]) => settings.optional === true).map(([name]) => '/' + name)));
     const registry = http.createServer((req, res) => {
         const pathname = decodeURIComponent(new URL(req.url, 'http://127.0.0.1').pathname);
         registryRequests.push({ method: req.method, pathname, authorization: Boolean(req.headers.authorization) });
@@ -116,6 +118,11 @@ net.Socket.prototype.connect=function(...args){
             const installed = path.join(application, 'node_modules', manifest.name);
             for (const file of files) assert.deepEqual(fs.readFileSync(path.join(installed, file)), fs.readFileSync(path.join(temp, 'node_modules', manifest.name, file)));
             verifyRuntimePackages(application, entries);
+            const remoteHelp = await execute(process.execPath, [path.join(installed, 'dist/remote.js'), '--help'],
+                { cwd: application, env: localEnv, timeout: 10000 });
+            assert.equal(remoteHelp.stderr, '');
+            assert.match(remoteHelp.stdout, /--config <absolute-path>/);
+            assert.equal(businessRequests, 0, 'Remote CLI help must not connect to a business API');
             assert.equal(fs.existsSync(path.join(application, 'node_modules/@nstdata-ai/ip-lookup')), false);
             const [crawl, proxy] = configs[index].map(value => value.mcpServers.nstdata);
             const combined = { ...crawl, env: { ...crawl.env, ...proxy.env, NSTDATA_MODULES: 'crawl,proxy' } };
@@ -160,7 +167,7 @@ net.Socket.prototype.connect=function(...args){
         }
         for (const request of registryRequests) {
             assert.equal(request.method, 'GET'); assert.equal(request.authorization, false);
-            assert.ok(request.pathname === '/@nstdata-ai/ip-lookup' || entries.some(entry =>
+            assert.ok(optionalPeers.has(request.pathname) || entries.some(entry =>
                 ['/' + entry.manifest.name, '/' + entry.filename].includes(request.pathname)), 'Unexpected registry request');
         }
         assert.ok(registryRequests.some(request => request.pathname === '/mcp.tgz'));

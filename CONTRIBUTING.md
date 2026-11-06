@@ -19,9 +19,10 @@ With `redis-server` on PATH, run the storage integration checks after building:
 npm run build
 npm run test:redis
 npm run test:remote
+npm run test:remote-service
 ```
 
-The checks start an isolated Redis process with TCP disabled and connect through its temporary Unix socket. They cover concurrent token consumption, revocation, delayed writes, credential encryption and expiry. Remote checks also exercise the actual authorization form, PKCE, refresh rotation and MCP calls against loopback and synthetic services. Both suites remove their own processes and temporary files, use no real credentials, require Linux or macOS and run in CI.
+The checks start an isolated Redis process with TCP disabled and connect through its temporary Unix socket. They cover concurrent token consumption, revocation, delayed writes, credential encryption and expiry. Remote checks exercise the authorization form, PKCE, refresh rotation, MCP calls and service startup/shutdown against loopback and synthetic services. These suites remove their own processes and temporary files, use no real credentials, require Linux or macOS and run in CI.
 
 ## Local package installation
 
@@ -33,7 +34,7 @@ npm install --ignore-scripts /path/to/nstdata-ai-mcp-server-1.0.2.tgz
 
 Configure the installed package using the README template; do not point clients at source files.
 
-Cover observable tool inputs/results, failure/empty content, deadlines, cancellation, output limits, reference continuation and process cleanup. Keep stdout exclusively for MCP protocol traffic. Task creation must not gain automatic retries.
+Cover observable tool inputs/results, failure/empty content, deadlines, cancellation, output limits, reference continuation and process cleanup. Keep stdio stdout exclusively for MCP protocol traffic. Task creation must not gain automatic retries.
 
 Update both READMEs and both language versions of the relevant reference document when public behavior changes. Keep credentials and raw private responses out of examples, fixtures and errors. Package checks install the locked graph outside the source tree, then install the tarball without modifying that lock, verify dependency versions/integrities and validate installed tools, types, configuration templates, packaged links and documented workflows. Runtime and protocol tests also run against the installed CLI, including lifecycle and interrupted-request cases. Release and documentation-check tests run in the source suite. Markdown is actually parsed, and documented npm installation and npx startup run through an isolated loopback registry. Startup checks only initialize and discover tools; they must make no business requests. Third-party registry fixtures are repacked from the already verified installed runtime graph; this does not establish public registry availability. Checks require the complete cache prepared by source installation.
 

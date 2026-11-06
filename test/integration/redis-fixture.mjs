@@ -74,7 +74,7 @@ export async function isolatedRedis(t, { allowedOrigins = () => [], virtualFetch
     assert.equal(await command(['PING']), 'PONG');
     assert.throws(() => new net.Socket().connect({ host: 'example.invalid', port: 443 }), /blocked/);
     await assert.rejects(globalThis.fetch('https://example.invalid'), /blocked/);
-    return { command, command2, async stop() {
+    return { command, command2, socketPath, async stop() {
         if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
         await exited;
     } };

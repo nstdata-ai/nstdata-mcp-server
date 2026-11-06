@@ -58,8 +58,8 @@ try {
     assert.ok(fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8').split('\n').includes(`## ${manifest.version}`), 'Missing version in changelog');
     assert.doesNotMatch(JSON.stringify(manifest) + JSON.stringify(lock), /file:|_planning/);
     const required = ['package.json', 'README.md', 'README_zh.md', 'LICENSE', 'CHANGELOG.md', 'CONTRIBUTING.md', 'SECURITY.md',
-        'docs/mcp.md', 'docs/mcp_zh.md', 'docs/proxy.md', 'docs/proxy_zh.md'];
-    for (const source of ['config', 'server', 'stdio', 'http-handler', 'oauth-resource', 'api-key-verifier', 'oauth-provider', 'remote-handler', 'redis/shared', 'redis/provider-adapter', 'redis/credential-store', 'modules/crawl', 'modules/crawl-schema', 'modules/crawl-result', 'shared/errors', 'shared/output', 'modules/proxy']) {
+        'docs/mcp.md', 'docs/mcp_zh.md', 'docs/proxy.md', 'docs/proxy_zh.md', 'docs/remote.md', 'docs/remote_zh.md'];
+    for (const source of ['config', 'server', 'stdio', 'http-handler', 'oauth-resource', 'api-key-verifier', 'oauth-provider', 'remote-handler', 'remote-config', 'remote-service', 'remote', 'redis/shared', 'redis/provider-adapter', 'redis/credential-store', 'modules/crawl', 'modules/crawl-schema', 'modules/crawl-result', 'shared/errors', 'shared/output', 'modules/proxy']) {
         required.push(`dist/${source}.js`, `dist/${source}.d.ts`);
     }
     assert.deepEqual(packed.files.map(file => file.path).sort(), required.sort());

@@ -4,6 +4,8 @@
 
 Use Nstdata Crawl and HTTP/HTTPS proxies from an MCP client. The client starts a local stdio process; no additional hosted MCP service is required.
 
+Operators deploying an HTTPS service can use the [self-hosting guide](docs/remote.md).
+
 ## Connect
 
 Requires Node.js 22 (22.18 or later) or 24, with `npx` on PATH. Get a Crawl API key from the [Nstdata dashboard](https://app.nstdata.io/). Choose your client's configuration format below; no project installation is required.

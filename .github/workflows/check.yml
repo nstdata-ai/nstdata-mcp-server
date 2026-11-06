@@ -40,3 +40,4 @@ jobs:
       - run: npm run build
       - run: npm run test:redis
       - run: npm run test:remote
+      - run: npm run test:remote-service
