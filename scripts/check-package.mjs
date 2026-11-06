@@ -59,7 +59,7 @@ try {
     assert.doesNotMatch(JSON.stringify(manifest) + JSON.stringify(lock), /file:|_planning/);
     const required = ['package.json', 'README.md', 'README_zh.md', 'LICENSE', 'CHANGELOG.md', 'CONTRIBUTING.md', 'SECURITY.md',
         'docs/mcp.md', 'docs/mcp_zh.md', 'docs/proxy.md', 'docs/proxy_zh.md'];
-    for (const source of ['config', 'server', 'stdio', 'http-handler', 'modules/crawl', 'modules/crawl-schema', 'modules/crawl-result', 'shared/errors', 'shared/output', 'modules/proxy']) {
+    for (const source of ['config', 'server', 'stdio', 'http-handler', 'oauth-resource', 'modules/crawl', 'modules/crawl-schema', 'modules/crawl-result', 'shared/errors', 'shared/output', 'modules/proxy']) {
         required.push(`dist/${source}.js`, `dist/${source}.d.ts`);
     }
     assert.deepEqual(packed.files.map(file => file.path).sort(), required.sort());

@@ -16,10 +16,11 @@ export interface HttpHandlerOptions {
     /**
      * Verify the caller's credential, issuer, resource/audience, expiry and required scopes before
      * returning its bound subject and upstream key. Return null on invalid/missing credentials.
+     * A trusted adapter may return a denial Response (4xx/5xx); successful Responses are refused.
      * This seam does not implement OAuth, verify tokens, or accept an upstream key as authentication.
      * Honor request.signal when performing asynchronous verification.
      */
-    authenticate: (request: Request) => Promise<HttpIdentity | null>;
+    authenticate: (request: Request) => Promise<HttpIdentity | Response | null>;
     /** Deployment-owned Crawl settings; never populated from request parameters or identity claims. */
     crawl?: Partial<Pick<Config, 'baseURL' | 'httpTimeoutMs' | 'maxResponseBytes' | 'maxOutputChars' | 'maxCrawlPages'>>;
     maxRequestBodyBytes?: number;
@@ -111,9 +112,19 @@ export function createHttpHandler(options: HttpHandlerOptions): HttpHandler {
             };
             active.add(finish);
             try {
-                let identity: HttpIdentity | null;
+                let identity: HttpIdentity | Response | null;
                 try { identity = await authenticate(scopedRequest); }
                 catch { await finish(); return failure(503, 'Service unavailable'); }
+                if (identity instanceof Response) {
+                    await finish();
+                    if (identity.status < 400 || identity.status > 599) {
+                        void identity.body?.cancel().catch(() => {});
+                        return failure(503, 'Service unavailable');
+                    }
+                    const headers = new Headers(identity.headers);
+                    headers.set('Cache-Control', 'no-store');
+                    return new Response(identity.body, { status: identity.status, statusText: identity.statusText, headers });
+                }
                 if (!identity || typeof identity.subject !== 'string' || !identity.subject.trim() ||
                     typeof identity.apiToken !== 'string' || !identity.apiToken.trim()) {
                     await finish();
