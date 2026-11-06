@@ -11,6 +11,17 @@ npm run check:package
 
 For offline development, cache the complete locked dependency graph before running `npm ci --offline`. `NSTDATA_SDK_TARBALL` and `NSTDATA_CHECKER_TARBALL` can supply local SDK and transport archives to package checks; their integrity must match the lock. These inputs do not replace source dependency installation. Tests use synthetic or loopback services, not paid endpoints.
 
+## Redis storage tests
+
+With `redis-server` on PATH, run the storage integration checks after building:
+
+```sh
+npm run build
+npm run test:redis
+```
+
+The checks start an isolated Redis process with TCP disabled and connect through its temporary Unix socket. They cover concurrent token consumption, revocation, delayed writes, credential encryption and expiry, then remove their own process and temporary files. They do not connect to an existing Redis instance or use real credentials. This suite requires Linux or macOS and also runs in CI.
+
 ## Local package installation
 
 After the checks pass, run `npm pack` to build `nstdata-ai-mcp-server-1.0.2.tgz`. Install it from a separate application directory:
