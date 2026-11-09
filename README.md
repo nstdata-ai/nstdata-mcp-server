@@ -29,7 +29,7 @@ Add this entry to your client's MCP configuration, replacing the token and prese
   "mcpServers": {
     "nstdata": {
       "command": "npx",
-      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.2"],
+      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.3"],
       "env": {
         "NSTDATA_MODULES": "crawl",
         "NSTDATA_API_TOKEN": "YOUR_CRAWL_API_TOKEN"
@@ -49,7 +49,7 @@ Add this entry to your user-level `~/.codex/config.toml` and replace the token. 
 ```toml
 [mcp_servers.nstdata]
 command = "npx"
-args = ["--yes", "@nstdata-ai/mcp-server@1.0.2"]
+args = ["--yes", "@nstdata-ai/mcp-server@1.0.3"]
 
 [mcp_servers.nstdata.env]
 NSTDATA_API_TOKEN = "YOUR_CRAWL_API_TOKEN"

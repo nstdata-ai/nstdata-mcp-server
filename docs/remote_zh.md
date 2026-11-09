@@ -4,7 +4,7 @@
 
 通过 HTTPS MCP 入口提供 Crawl 工具，并使用逐用户 OAuth 授权。用户在同意页输入自己的现有 Nstdata API Key，调用消耗该用户额度；不要为此服务配置共享的 `NSTDATA_API_TOKEN`。Proxy 工具继续使用独立的本地 stdio 配置。
 
-Remote 是从本仓库构建的独立应用，不包含在已发布的 `@nstdata-ai/mcp-server@1.0.2` 包中；npm 包的安装和客户端配置保持不变。
+Remote 是从本仓库构建的独立应用，不包含在本地 `@nstdata-ai/mcp-server` npm 包中；npm 包的安装和客户端配置保持不变。
 
 ## 部署条件
 

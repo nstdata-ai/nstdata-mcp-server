@@ -4,7 +4,7 @@
 
 Run the Crawl tools behind an HTTPS MCP endpoint with per-user OAuth authorization. Each user enters their existing Nstdata API key on the consent page; calls use that user's credits. Do not configure a shared `NSTDATA_API_TOKEN` for this service. Proxy tools remain available through the separate local stdio configuration.
 
-Remote is a separate application built from this repository. It is not included in the published `@nstdata-ai/mcp-server@1.0.2` package; the npm package's installation and client configuration remain unchanged.
+Remote is a separate application built from this repository. It is not included in the local `@nstdata-ai/mcp-server` npm package; the npm package's installation and client configuration remain unchanged.
 
 ## Deployment requirements
 
