@@ -6,7 +6,19 @@ import { loadConfig } from '../dist/config.js';
 import { parseEnv } from 'node:util';
 
 const documents = ['README.md', 'README_zh.md', 'CONTRIBUTING.md', 'CHANGELOG.md', 'SECURITY.md',
-    'docs/mcp.md', 'docs/mcp_zh.md', 'docs/proxy.md', 'docs/proxy_zh.md', 'docs/remote.md', 'docs/remote_zh.md'];
+    'docs/mcp.md', 'docs/mcp_zh.md', 'docs/proxy.md', 'docs/proxy_zh.md', 'docs/remote.md', 'docs/remote_zh.md',
+    'plugins/nstdata/README.md', 'plugins/nstdata/README_zh.md'];
+
+test('the standalone plugin includes its own installation guide and MIT license', () => {
+    const directory = new URL('../plugins/nstdata/', import.meta.url);
+    const readme = fs.readFileSync(new URL('README.md', directory), 'utf8');
+    assert.ok(readme.replace(/```[\s\S]*?```/g, '').trim().split(/\s+/).length >= 40);
+    assert.match(readme, /\[中文\]\(README_zh\.md\)/);
+    assert.match(readme, /\[MIT license\]\(LICENSE\)/);
+    assert.match(fs.readFileSync(new URL('README_zh.md', directory), 'utf8'), /\[MIT 许可\]\(LICENSE\)/);
+    assert.equal(fs.readFileSync(new URL('LICENSE', directory), 'utf8'),
+        fs.readFileSync(new URL('../LICENSE', import.meta.url), 'utf8'));
+});
 
 test('Cursor marketplace resolves its own plugin and credential configuration', () => {
     const read = file => JSON.parse(fs.readFileSync(new URL('../' + file, import.meta.url), 'utf8'));

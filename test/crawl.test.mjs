@@ -221,6 +221,39 @@ test('storage references support Unicode text continuation and lossless binary c
     assert.equal(h.requests[0].url, '/api/v1/crawl/storage/read?st=text%2Fref');
 });
 
+test('text reference chunks retain Unicode boundaries, empty content and EOF positions', { timeout: 10000 }, async t => {
+    const h = await harness(t, (req, res) => res.end(req.url.includes('empty') ? '' : 'A😀中B'));
+    for (const format of ['markdown', 'html']) {
+        for (const [ref, offset, length, text, total, nextOffset] of [
+            ['text', 0, 2, 'A😀', 4, 2],
+            ['text', 2, 2, '中B', 4, undefined],
+            ['text', 4, 1, '', 4, undefined],
+            ['text', 9, 1, '', 4, undefined],
+            ['empty', 0, 1, '', 0, undefined],
+        ]) {
+            const result = await h.client.callTool({ name: 'nstdata_crawl_read_result', arguments: { ref, format, offset, length } });
+            assert.notEqual(result.isError, true);
+            assert.deepEqual(result.structuredContent, { format, encoding: 'utf-8', unit: 'codePoints', offset,
+                text, total, ...(nextOffset === undefined ? {} : { nextOffset }) });
+        }
+    }
+    assert.equal(h.requests.length, 10);
+    assert.equal(h.stderr(), '');
+});
+
+test('a small text chunk from an 8 MiB reference fits a bounded process heap', { timeout: 10000 }, async t => {
+    const h = await harness(t, (_req, res) => res.end(Buffer.from('😀'.repeat(2 * 1024 * 1024))),
+        { NODE_OPTIONS: '--max-old-space-size=64 --max-semi-space-size=1' });
+    const result = await h.client.callTool({ name: 'nstdata_crawl_read_result', arguments: {
+        ref: 'large-text', format: 'markdown', offset: 0, length: 2000,
+    } });
+    assert.notEqual(result.isError, true);
+    assert.deepEqual(result.structuredContent, { format: 'markdown', encoding: 'utf-8', unit: 'codePoints', offset: 0,
+        text: '😀'.repeat(2000), total: 2097152, nextOffset: 2000 });
+    assert.equal(h.requests.length, 1);
+    assert.equal(h.stderr(), '');
+});
+
 test('a client discovers the single-page tool and obtains Markdown through the installed SDK', { timeout: 10000 }, async t => {
     const h = await harness(t, (_req, res) => json(res, envelope({
         status: 'completed', success: true, data: { markdown: '# Fixture page', metadata: { title: 'Fixture' } },

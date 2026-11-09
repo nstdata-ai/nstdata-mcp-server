@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Read bounded text chunks without allocating an array for the entire reference, preserving Unicode offsets and continuation.
 - Add a separate private Remote MCP application and container build, keeping OAuth and Redis dependencies and runtime output outside the published stdio package.
 - Add Cursor marketplace installation with module selection and masked credential fields.
 - Add Claude Code marketplace installation with client-managed module and credential configuration.

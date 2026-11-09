@@ -95,6 +95,23 @@ for (const era of ['modern', 'legacy']) {
         assert.equal(requests.length, 0);
     });
 
+    test(`${era} HTTP reference reads preserve Unicode continuation and EOF`, { timeout: 10000 }, async t => {
+        const requests = guardNetwork(t, () => new Response('A😀中B'));
+        const c = await client(t, handler(t), 'A', era);
+        for (const [offset, text, nextOffset] of [[1, '😀中', 3], [4, '', undefined]]) {
+            const result = await c.callTool({ name: 'nstdata_crawl_read_result', arguments: {
+                ref: 'existing-ref', format: 'markdown', offset, length: 2,
+            } });
+            assert.notEqual(result.isError, true);
+            assert.deepEqual(result.structuredContent, { format: 'markdown', encoding: 'utf-8', unit: 'codePoints',
+                offset, text, total: 4, ...(nextOffset === undefined ? {} : { nextOffset }) });
+        }
+        assert.equal(requests.length, 2);
+        assert.ok(requests.every(request => request.method === 'GET' &&
+            new URL(request.url).pathname === '/api/v1/crawl/storage/read' &&
+            request.headers.get('x-api-key') === identity('A').apiToken));
+    });
+
     test(`${era} concurrent A/B status requests retain independent validated keys and trusted configuration`, { timeout: 10000 }, async t => {
         const arrived = deferred(), release = deferred();
         const requests = guardNetwork(t, async request => {
