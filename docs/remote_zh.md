@@ -8,11 +8,22 @@ Remote 是从本仓库构建的独立应用，不包含在已发布的 `@nstdata
 
 ## 部署条件
 
-- Node.js 22 系列的 22.18+ 或 Node.js 24；稳定的 HTTPS origin，以及与之匹配的 PEM 证书和私钥。
+- Node.js 22 系列的 22.18+ 或 Node.js 24，以及稳定的公网 HTTPS origin。证书可由现有网关统一管理，或由应用直接加载。
 - 采用持久化、`noeviction`、独立命名空间的单机 Redis，并授予 adapter 所需的键／Lua 权限。使用验证证书的 TLS（`rediss:`）或受保护的本地 Unix socket；不支持 Cluster、Sentinel。
 - 在目标平台配置固定 OAuth client ID、机密和精确 callback URL。服务要求 `client_secret_basic` 和 S256 PKCE，不开放动态客户端注册。
 
-TLS 在此 Node 进程终止。四层透传负载均衡可保留这条连接；不支持在其他位置终止 TLS 后转发 HTTP，且拒绝 `Forwarded`／`X-Forwarded-*` 权威信息头。重启时保持 issuer、resource 和 callback URL 稳定。
+## HTTPS 入口方式
+
+| 方式 | 应用配置 | 证书位置 |
+|---|---|---|
+| 可信反向代理 | `listen` 监听内部 HTTP，配置 `trustedProxyCidrs`，不配置 `listen.tls` | 现有 HTTPS 网关 |
+| 应用直接 TLS | 配置 `listen.tls.certFile` 和 `listen.tls.keyFile`，不配置 `trustedProxyCidrs` | 应用挂载目录 |
+
+两种方式互斥；不会自动信任代理。复用 Kubernetes／ALB 时，通常选择可信反向代理方式。网关到应用的 HTTP 必须位于受控内网，并通过网络策略或防火墙仅允许可信入口；公网各跳仍需 HTTPS。内部也要求加密时使用应用 TLS，并由四层入口透传。
+
+`trustedProxyCidrs` 匹配应用实际观察到的直接对端 IP，不匹配 `X-Forwarded-For`。配置1–32个字面量IP或网络地址对齐的IPv4／IPv6 CIDR；不接受`/0`、主机名、带zone的IPv6、重复项或与IPv4映射范围重叠的IPv6网段。网关必须保留固定issuer的Host，删除客户端传入的转发信息，再写入唯一的`X-Forwarded-Proto: https`。服务拒绝重复Host／协议头、协议列表及`Forwarded`、`X-Forwarded-Host`、`X-Forwarded-Port`，不会用转发头推导公开地址。NAT后应按实际直接对端配置，不能直接复制网关公布的外部IP范围。
+
+必须在实际网关验证上述契约。阿里云ALB需显式启用监听器的`XForwardedForProtoEnabled`，该设置默认关闭；还需验证客户端转发头的清理／覆盖，不能只凭监听器配置认定安全。重启时保持issuer、resource和callback URL稳定。
 
 ## 构建与配置
 
@@ -41,10 +52,8 @@ const secret = () => randomBytes(32).toString('base64url');
 const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const config = {
   issuerUrl: 'https://mcp.example.com',
-  listen: {
-    host: '0.0.0.0', port: 8443,
-    tls: { certFile: '/absolute/path/server.crt', keyFile: '/absolute/path/server.key' }
-  },
+  listen: { host: '0.0.0.0', port: 8080 },
+  trustedProxyCidrs: ['192.0.2.0/24'],
   redis: {
     url: 'rediss://USER:PASSWORD@redis.example.com:6379/0',
     namespace: 'production'
@@ -70,12 +79,13 @@ console.log('Remote configuration created.');
 node create-remote-config.mjs /absolute/path/remote.json
 ```
 
-程序拒绝覆盖现有文件，也不打印机密。编辑受保护的 JSON，填写实际 issuer、监听端口、证书路径、已编码的 Redis 凭据、client ID 和精确 callback。只将对应的 `clientSecret` 复制到平台受保护的 OAuth 配置中，不要在每次重启时重新生成密钥。
+程序拒绝覆盖现有文件，也不打印机密。示例中的 `192.0.2.0/24` 是文档保留网段，必须替换为实际可信代理范围。编辑受保护的 JSON，填写实际 issuer、监听端口、可信代理范围、已编码的 Redis 凭据、client ID 和精确 callback。采用应用 TLS 时，移除 `trustedProxyCidrs` 并填写 `listen.tls` 的证书／私钥路径。只将对应的 `clientSecret` 复制到平台受保护的 OAuth 配置中，不要在每次重启时重新生成密钥。
 
 | 字段 | 配置规则 |
 |---|---|
 | `issuerUrl` | 不含路径的 HTTPS origin；MCP resource 为该 origin 加 `/mcp` |
-| `listen` | 数字 IP 和 `1–65535` 端口；HTTPS 必须提供 `tls.certFile`、`tls.keyFile` |
+| `listen` | 数字 IP 和 `1–65535` 端口；代理模式监听 HTTP，直 TLS 模式还需 `tls.certFile`、`tls.keyFile` |
+| `trustedProxyCidrs` | 代理模式必填的直接对端 IP／CIDR；与 `listen.tls` 互斥 |
 | `redis` | `url` 或绝对 `socketPath` 二选一；不同环境使用独立 namespace |
 | `clients` | 已注册 client ID、至少 32 字节的机密和精确 callback URL |
 | `cookieKeys` | 至少 32 字节的稳定机密；当前密钥放在首位 |
@@ -84,7 +94,7 @@ node create-remote-config.mjs /absolute/path/remote.json
 | `fingerprintKey` | 独立、稳定的 32 字节 base64url 密钥；变更需新建 namespace |
 | `allowedOrigins` | 可选的精确浏览器 origin，不支持通配符；非浏览器请求可不带 Origin |
 
-仅在本机开发时，HTTP issuer 可以使用字面量 `127.0.0.1` 或 `[::1]`，监听同一个回环地址和端口且不提供 TLS 配置。明文 `redis:` URL 也仅允许字面量回环地址。不要将该配置暴露到公网。
+仅在本机开发时，HTTP issuer 可以使用字面量 `127.0.0.1` 或 `[::1]`，监听同一个回环地址和端口且不提供 TLS 或可信代理配置。明文 `redis:` URL 也仅允许字面量回环地址。不要将该配置暴露到公网。
 
 ## 校验与启动
 
@@ -93,7 +103,7 @@ node remote/dist/remote.js --config /absolute/path/remote.json --check
 node remote/dist/remote.js --config /absolute/path/remote.json
 ```
 
-`--check` 检查配置、TLS 文件及证书／私钥匹配，不连接 Redis、不监听端口，也不调用 Nstdata。校验成功不证明 DNS、证书信任链、Redis ACL 或平台兼容性。
+`--check` 检查配置；直 TLS 模式还检查TLS文件及证书／私钥匹配，不连接 Redis、不监听端口，也不调用 Nstdata。校验成功不证明 DNS、证书信任链、Redis ACL 或平台兼容性。
 
 启动先连接 Redis 并确认 `PING` 成功，之后才监听。完整连接过程上限 5 秒，命令上限 2 秒。Redis 故障或超时会停止服务，不自动重连或重放命令。超时写入可能已经执行；重试授权操作前需先排查实际状态。
 
@@ -105,7 +115,7 @@ node remote/dist/remote.js --config /absolute/path/remote.json
 | `GET /health/ready` | 启动已完成，Redis 客户端在本机处于 ready 状态 |
 | `/mcp` | 需要认证的 Streamable HTTP MCP resource，提供六个 Crawl 工具 |
 
-探测时使用 issuer 对应的 Host。健康检查不会每次查询 Redis，也不证明持久化、Lua 权限、上游可用性或平台授权。未认证的 `/mcp` 请求返回 OAuth challenge，不能将它作为 readiness 检查。
+健康探测使用issuer对应的Host或字面量IP Host；IP例外仅适用于两个精确健康路径，不授权OAuth／MCP请求。直接探测不带转发头；经代理探测需通过完整的可信对端／HTTPS协议校验。健康检查不会每次查询 Redis，也不证明持久化、Lua 权限、上游可用性或平台授权。未认证的 `/mcp` 请求返回 OAuth challenge，不能将它作为 readiness 检查。
 
 ## 容器运行
 
@@ -117,19 +127,19 @@ docker build --file Dockerfile.remote --tag nstdata-mcp-remote:local .
 
 镜像使用 Node.js 24.22.2，默认以非 root 的 `node` 用户（UID 1000）运行，在 `/app` 启动 `node dist/remote.js`。镜像只包含编译后的 Remote 应用及其生产依赖。
 
-在本地 Linux／macOS 运行时，将 `remote.json`、`server.crt` 和 `server.key` 放入下方受保护目录。将配置内 TLS 路径设为 `/run/secrets/server.crt` 和 `/run/secrets/server.key`。使用拥有该目录及文件的非 root 宿主用户执行以下命令；UID 覆盖让该用户可通过只读挂载读取权限为 `0400` 或 `0600` 的文件。
+在本地 Linux／macOS 运行时，将 `remote.json` 放入下方受保护目录；代理模式不需要证书文件。仅在应用 TLS 模式下额外挂载 `server.crt` 和 `server.key`，并将配置内路径设为 `/run/secrets/server.crt` 和 `/run/secrets/server.key`。使用拥有该目录及文件的非 root 宿主用户执行以下命令；UID 覆盖让该用户可通过只读挂载读取权限为 `0400` 或 `0600` 的文件。
 
 ```sh
 REMOTE_CONFIG_DIR="$HOME/.config/nstdata-mcp-remote"
 docker run --rm --user "$(id -u):$(id -g)" \
   --mount type=bind,src="$REMOTE_CONFIG_DIR",dst=/run/secrets,readonly \
   nstdata-mcp-remote:local --config /run/secrets/remote.json --check
-docker run --rm --user "$(id -u):$(id -g)" --publish 8443:8443 \
+docker run --rm --user "$(id -u):$(id -g)" --publish 127.0.0.1:8080:8080 \
   --mount type=bind,src="$REMOTE_CONFIG_DIR",dst=/run/secrets,readonly \
   nstdata-mcp-remote:local --config /run/secrets/remote.json
 ```
 
-此端口映射要求配置监听 `0.0.0.0:8443`，且容器内能够访问 Redis。TLS 仍在 Node 中终止。以 UID 1000 运行的 Linux 部署需通过其 Secret 挂载、CSI driver 或 init 步骤交付该 UID 可读的文件，同时保持配置和私钥权限为 `0400` 或 `0600`。
+此代理模式示例监听 `0.0.0.0:8080`，仅将宿主回环端口暴露给本机网关；网关还需配置HTTPS及实际可信对端范围，容器内需能访问Redis。应用TLS模式应按配置调整端口映射。以 UID 1000 运行的 Linux 部署需通过其 Secret 挂载、CSI driver 或 init 步骤交付该 UID 可读的文件，同时保持配置和私钥权限为 `0400` 或 `0600`。
 
 ## 平台接入与运维
 

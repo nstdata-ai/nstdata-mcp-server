@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const sources = ['api-key-verifier', 'config', 'http-handler', 'modules/crawl-result', 'modules/crawl-schema',
     'modules/crawl', 'modules/proxy', 'oauth-provider', 'oauth-resource', 'redis/credential-store',
-    'redis/provider-adapter', 'redis/shared', 'remote-config', 'remote-handler', 'remote-service', 'remote',
+    'redis/provider-adapter', 'redis/shared', 'remote-config', 'remote-handler', 'remote-request', 'remote-service', 'remote',
     'server', 'shared/errors', 'shared/output'];
 const artifactFiles = ['package.json', 'package-lock.json', 'docs/remote.md', 'docs/remote_zh.md',
     ...sources.map(name => `dist/${name}.js`)].sort();

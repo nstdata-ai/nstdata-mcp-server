@@ -23,5 +23,5 @@ COPY remote/package.json ./
 COPY --from=build /build/remote/dist ./dist
 COPY LICENSE ./
 USER node:node
-EXPOSE 8443
+EXPOSE 8080 8443
 ENTRYPOINT ["node", "dist/remote.js"]

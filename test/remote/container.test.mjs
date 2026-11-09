@@ -7,7 +7,7 @@ import test from 'node:test';
 import { localContext, verifyImageConfig, verifyInventory, writeFixtures } from '../../scripts/check-container.mjs';
 
 const context = Host => [{ Name: 'fixture', Endpoints: { docker: { Host } } }];
-const image = () => ({ Id: 'sha256:' + 'a'.repeat(64), Config: { User: 'node:node', WorkingDir: '/app',
+const image = () => ({ Id: 'sha256:' + 'a'.repeat(64), Os: 'linux', Architecture: 'arm64', Config: { User: 'node:node', WorkingDir: '/app',
     Entrypoint: ['node', 'dist/remote.js'], Env: ['NODE_ENV=production'] } });
 
 function inventory() {
@@ -32,11 +32,13 @@ test('container checks require one local Unix Docker context and reject remote e
 });
 
 test('container checks reject root identity, alternate entrypoints and signal or credential overrides', () => {
-    verifyImageConfig(image());
+    assert.equal(verifyImageConfig(image()), 'linux/arm64');
+    assert.equal(verifyImageConfig({ ...image(), Architecture: 'amd64' }), 'linux/amd64');
     for (const change of [value => { value.Config.User = '0:0'; },
         value => { value.Config.Entrypoint = ['node', 'dist/stdio.js']; },
         value => { value.Config.StopSignal = 'SIGKILL'; },
-        value => { value.Config.Env.push('NSTDATA_API_TOKEN=synthetic'); }]) {
+        value => { value.Config.Env.push('NSTDATA_API_TOKEN=synthetic'); },
+        value => { value.Os = 'windows'; }, value => { value.Architecture = 'unknown'; }]) {
         const value = image(); change(value); assert.throws(() => verifyImageConfig(value));
     }
 });

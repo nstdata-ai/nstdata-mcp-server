@@ -5,8 +5,10 @@ import { createOAuthProvider, type OAuthProviderOptions } from './oauth-provider
 import { createOAuthHttpHandler } from './oauth-resource.js';
 import type { HttpHandlerOptions } from './http-handler.js';
 import { createRedisAdapterFactory } from './redis/provider-adapter.js';
+import { createRemoteRequestPolicy } from './remote-request.js';
 
 export interface RemoteHandlerOptions extends OAuthProviderOptions {
+    trustedProxyCidrs?: readonly string[];
     verifyApiKey: (apiToken: string, signal: AbortSignal) => Promise<boolean>;
     allowedOrigins?: readonly string[];
     crawl?: HttpHandlerOptions['crawl'];
@@ -66,7 +68,7 @@ async function bodyBytes(request: IncomingMessage, signal: AbortSignal, maxBytes
     } finally { signal.removeEventListener('abort', stop); }
 }
 
-/** Node HTTP assembly. Production HTTPS must terminate on this socket; forwarded headers are not trusted. */
+/** Node HTTP assembly with direct TLS or an explicitly restricted reverse proxy. */
 export function createRemoteHandler(options: RemoteHandlerOptions): RemoteHandler {
     try { return configureRemoteHandler(options); }
     catch { throw new Error('Invalid Remote configuration'); }
@@ -87,7 +89,10 @@ function configureRemoteHandler(options: RemoteHandlerOptions): RemoteHandler {
     const clients = new Map(options.clients.map(client => [client.clientId, client.name ?? client.clientId]));
     const callbackOrigins = [...new Set(options.clients.flatMap(client => client.redirectUris.map(uri => new URL(uri).origin)))];
     const providerCsp = `default-src 'none'; script-src 'self'; form-action 'self' ${callbackOrigins.join(' ')}; frame-ancestors 'none'; base-uri 'none'`;
+    const requestAllowed = createRemoteRequestPolicy(options.issuerUrl, options.trustedProxyCidrs);
     const oauth = createOAuthProvider(options);
+    // Koa may trust the protocol only after this handler validates the direct peer and headers.
+    oauth.provider.proxy = options.trustedProxyCidrs !== undefined;
     const mcp = createOAuthHttpHandler({ resourceUrl: resource.href, allowedOrigins: [...allowedOrigins],
         oauthMetadata: oauth.metadata, verifyCredential: oauth.verifyCredential, crawl: options.crawl,
         maxRequestBodyBytes: maxBody });
@@ -166,9 +171,7 @@ ${error ? `<p role="alert">${escape(error)}</p>` : ''}
             let restoreNative: (() => void) | undefined;
             try {
                 const rawUrl = request.url ?? '';
-                if (!rawUrl.startsWith('/') || rawUrl.startsWith('//') || request.headers.host?.toLowerCase() !== issuer.host.toLowerCase() ||
-                    ['forwarded', 'x-forwarded-proto', 'x-forwarded-host', 'x-forwarded-port'].some(name => request.headers[name] !== undefined) ||
-                    (issuer.protocol === 'https:' && !(request.socket as { encrypted?: boolean }).encrypted)) {
+                if (!rawUrl.startsWith('/') || rawUrl.startsWith('//') || !requestAllowed(request)) {
                     reply(response, 400, 'Invalid request'); return;
                 }
                 const url = new URL(rawUrl, issuer.origin);

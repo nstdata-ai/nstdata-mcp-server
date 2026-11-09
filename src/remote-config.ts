@@ -6,10 +6,12 @@ import { isIP } from 'node:net';
 import { isAbsolute } from 'node:path';
 import { z } from 'zod';
 import type { OAuthFixedClient, OAuthProviderOptions } from './oauth-provider.js';
+import { trustedProxyPeers } from './remote-request.js';
 
 export interface RemoteServiceConfig {
     issuerUrl: string;
     listen: { host: string; port: number; tls?: { keyFile: string; certFile: string } };
+    trustedProxyCidrs?: string[];
     redis: { url?: string; socketPath?: string; namespace: string };
     clients: OAuthFixedClient[];
     cookieKeys: string[];
@@ -49,6 +51,7 @@ const configuration = z.strictObject({
     issuerUrl: z.string().min(1).max(8192),
     listen: z.strictObject({ host: z.string().refine(value => isIP(value) !== 0), port: z.number().int().min(1).max(65535),
         tls: z.strictObject({ keyFile: absoluteFile, certFile: absoluteFile }).optional() }),
+    trustedProxyCidrs: z.array(z.string()).min(1).max(32).optional(),
     redis: z.strictObject({ url: z.string().min(1).max(8192).optional(), socketPath: absoluteFile.optional(), namespace: keyId }),
     clients: z.array(z.strictObject({
         clientId: z.string().min(1).max(256).regex(/^[^\s\u0000-\u001f\u007f]+$/u), clientSecret: secret,
@@ -117,10 +120,11 @@ export function parseRemoteConfig(value: unknown): RemoteServiceConfig {
     try {
         const parsed = configuration.parse(value);
         const issuer = webUrl(parsed.issuerUrl, true);
+        trustedProxyPeers(parsed.trustedProxyCidrs);
         if (issuer.protocol === 'http:') {
-            if (parsed.listen.tls || parsed.listen.host !== issuer.hostname.replace(/^\[|\]$/g, '') ||
+            if (parsed.trustedProxyCidrs || parsed.listen.tls || parsed.listen.host !== issuer.hostname.replace(/^\[|\]$/g, '') ||
                 parsed.listen.port !== Number(issuer.port || 80)) throw new Error();
-        } else if (!parsed.listen.tls) throw new Error();
+        } else if (Boolean(parsed.listen.tls) === Boolean(parsed.trustedProxyCidrs)) throw new Error();
         if (Boolean(parsed.redis.url) === Boolean(parsed.redis.socketPath)) throw new Error();
         if (parsed.redis.url) {
             const redis = new URL(parsed.redis.url);
