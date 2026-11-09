@@ -97,7 +97,7 @@ node remote/dist/remote.js --config /absolute/path/remote.json
 
 Startup connects to Redis and requires a successful `PING` before listening. Connection setup has a 5-second deadline; commands have a 2-second deadline. A Redis failure or deadline stops the service without automatic reconnect or command replay. A timed-out write may already have executed: investigate before retrying authorization operations.
 
-Each process accepts at most 256 concurrent connections. TLS handshakes and request headers have 10-second deadlines; request handling is bounded to 130 seconds. Set deployment traffic limits to match capacity before opening public access.
+Each process accepts at most 256 concurrent connections, 32 active business requests and 64 in-flight Redis commands. Excess work is rejected without queuing or retrying; reaching these capacity limits does not stop the service. TLS handshakes and request headers have 10-second deadlines; request handling is bounded to 130 seconds. Set deployment traffic limits to match capacity before opening public access.
 
 | Endpoint | Meaning |
 |---|---|

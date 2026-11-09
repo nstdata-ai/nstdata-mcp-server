@@ -11,7 +11,7 @@ import type { RemoteServiceConfig } from './remote-config.js';
 import { createApiKeyVerifier } from './api-key-verifier.js';
 import { createRemoteHandler, type RemoteHandler } from './remote-handler.js';
 import { createRedisCredentialStore } from './redis/credential-store.js';
-import { RedisStoreError } from './redis/shared.js';
+import { limitRedisCommands, RedisStoreError } from './redis/shared.js';
 
 export interface RemoteService {
     address: AddressInfo;
@@ -22,7 +22,6 @@ export interface RemoteService {
 const startupTimeoutMs = 5_000;
 const commandTimeoutMs = 2_000;
 const shutdownTimeoutMs = 10_000;
-// Leave headroom in the 100-command Redis queue; deployment capacity still needs measurement.
 const maxActiveRequests = 32;
 const serviceError = () => new Error('Remote service unavailable. Check deployment configuration and Redis.');
 
@@ -147,11 +146,11 @@ export async function startRemoteService(input: RemoteServiceConfig): Promise<Re
                 connectTimeout: startupTimeoutMs, reconnectStrategy: false },
         });
         client.on('error', fail);
-        const command = async (args: string[]): Promise<unknown> => {
+        const command = limitRedisCommands(async (args: string[]): Promise<unknown> => {
             if (closing || !client?.isReady) throw new RedisStoreError();
             try { return await deadline(client.sendCommand(args), commandTimeoutMs); }
             catch { fail(); throw new RedisStoreError(); }
-        };
+        });
         const store = { command, namespace: config.redis.namespace, maxTtlSeconds: 2_592_000 };
         const credentials = createRedisCredentialStore({ ...store, encryptionKeys: config.encryptionKeys,
             currentKeyId: config.currentKeyId, fingerprintKey: config.fingerprintKey });

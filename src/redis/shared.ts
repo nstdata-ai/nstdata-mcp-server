@@ -15,6 +15,17 @@ export class RedisStoreError extends Error {
     }
 }
 
+/** Bound commands before the client queue; rejected work is never dispatched or replayed. */
+export function limitRedisCommands(command: RedisCommand): RedisCommand {
+    let active = 0;
+    return async args => {
+        if (active >= 64) throw new RedisStoreError();
+        active++;
+        try { return await command(args); }
+        finally { active--; }
+    };
+}
+
 function segment(value: string): string {
     if (typeof value !== 'string' || !value.length || Buffer.byteLength(value, 'utf8') > 1024) {
         throw new Error('Invalid Redis storage identifier');
