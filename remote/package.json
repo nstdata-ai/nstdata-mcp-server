@@ -1,0 +1,19 @@
+{
+  "name": "@nstdata-ai/mcp-server-remote",
+  "version": "1.0.2",
+  "private": true,
+  "description": "Self-hosted Nstdata Remote MCP service",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": "^22.18.0 || ^24.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.3.1",
+    "@nstdata-ai/crawl": "2.0.0",
+    "@nstdata-ai/proxy-checker": "1.2.0",
+    "@redis/client": "6.3.1",
+    "oidc-provider": "9.13.3",
+    "zod": "4.6.7"
+  }
+}

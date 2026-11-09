@@ -23,6 +23,8 @@ jobs:
   checks:
     if: github.repository == 'nstdata-ai/nstdata-mcp-server' && github.ref == 'refs/heads/main'
     uses: ./.github/workflows/check.yml
+    with:
+      local_only: true
 
   package:
     needs: checks

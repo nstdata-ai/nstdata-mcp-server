@@ -5,9 +5,14 @@ Use Node.js 22.18+ in the 22.x line, or Node.js 24. Proxy certificate tests also
 ```sh
 npm ci --ignore-scripts --no-audit --no-fund
 npm run typecheck
+npm run typecheck:remote
 npm test
 npm run check:package
+npm run build:remote
+npm run check:remote
 ```
+
+`npm test` runs both the local and Remote unit suites; use `npm run test:local` or `npm run test:remote:unit` to run one suite. `npm run build` produces only the local stdio package in `dist`. `npm run build:remote` compiles the same source into the private application's `remote/dist`; install its runtime dependencies with `npm --prefix remote ci --omit=dev --ignore-scripts`. OAuth and Redis are development dependencies of the root project and runtime dependencies of the private Remote application, not dependencies of the published stdio package. See the [Remote guide](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/docs/remote.md) for startup and configuration. `check:remote` verifies a production install in a temporary directory using the locked cache.
 
 For offline development, cache the complete locked dependency graph before running `npm ci --offline`. `NSTDATA_SDK_TARBALL` and `NSTDATA_CHECKER_TARBALL` can supply local SDK and transport archives to package checks; their integrity must match the lock. These inputs do not replace source dependency installation. Tests use synthetic or loopback services, not paid endpoints.
 
@@ -16,13 +21,24 @@ For offline development, cache the complete locked dependency graph before runni
 With `redis-server` on PATH, run the storage integration checks after building:
 
 ```sh
-npm run build
+npm run build:remote
 npm run test:redis
 npm run test:remote
 npm run test:remote-service
 ```
 
 The checks start an isolated Redis process with TCP disabled and connect through its temporary Unix socket. They cover concurrent token consumption, revocation, delayed writes, credential encryption and expiry. Remote checks exercise the authorization form, PKCE, refresh rotation, MCP calls and service startup/shutdown against loopback and synthetic services. These suites remove their own processes and temporary files, use no real credentials, require Linux or macOS and run in CI.
+
+## Remote container
+
+With a running local Docker engine, build and check the image as a nonroot Linux/macOS user:
+
+```sh
+docker build --file Dockerfile.remote --tag nstdata-mcp-remote:local .
+npm run check:container -- nstdata-mcp-remote:local
+```
+
+The check verifies the existing image's runtime files, dependencies and identity, then uses isolated containers with synthetic configuration to test startup and stopping the default entrypoint during an unfinished request. It removes only its own containers. The wire fixture does not validate Redis persistence; use the Redis integration tests above. This command does not publish an image or deploy a service.
 
 ## Local package installation
 

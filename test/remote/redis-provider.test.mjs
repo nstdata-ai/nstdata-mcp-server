@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { pathToFileURL } from 'node:url';
-import { cli } from './helpers.mjs';
+import { remoteCli as cli } from '../helpers.mjs';
 
 const { createRedisAdapterFactory } = await import(new URL('./redis/provider-adapter.js', pathToFileURL(cli)));
 const { RedisStoreError, createRedisKeys } = await import(new URL('./redis/shared.js', pathToFileURL(cli)));

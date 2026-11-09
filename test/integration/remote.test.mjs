@@ -2,11 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import http from 'node:http';
 import { createHash, generateKeyPairSync, randomBytes } from 'node:crypto';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { isolatedRedis } from './redis-fixture.mjs';
+import { remoteCli } from '../helpers.mjs';
 
-const executable = pathToFileURL(process.env.NSTDATA_TEST_CLI ?? fileURLToPath(new URL('../../dist/stdio.js', import.meta.url)));
+const executable = pathToFileURL(remoteCli);
 const upstream = 'https://remote-integration.invalid';
 const keys = { A: 'synthetic-upstream-A', B: 'synthetic-upstream-B', bad: 'synthetic-rejected', invalid: 'synthetic-malformed', timeout: 'synthetic-timeout', abort: 'synthetic-abort' };
 const keyLabels = new Map(Object.entries(keys).map(([label, value]) => [value, label]));

@@ -5,16 +5,17 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
+import { remoteCli } from '../helpers.mjs';
 
-const executable = pathToFileURL(process.env.NSTDATA_TEST_CLI ??
-    fileURLToPath(new URL('../dist/stdio.js', import.meta.url)));
+const executable = pathToFileURL(remoteCli);
+const docs = process.env.NSTDATA_REMOTE_TEST_CLI ? new URL('../docs/', executable) : new URL('../../docs/', import.meta.url);
 const { loadRemoteConfig } = await import(new URL('./remote-config.js', executable));
 
 test('both operator guides generate a valid protected configuration without overwriting secrets', async t => {
     const directory = fs.mkdtempSync(path.join(tmpdir(), 'mcp-remote-docs-'));
     t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
     const sources = ['remote.md', 'remote_zh.md'].map(name => {
-        const text = fs.readFileSync(new URL('../docs/' + name, executable), 'utf8');
+        const text = fs.readFileSync(new URL(name, docs), 'utf8');
         const examples = [...text.matchAll(/```js\n([\s\S]*?)```/g)];
         assert.equal(examples.length, 1);
         return examples[0][1];

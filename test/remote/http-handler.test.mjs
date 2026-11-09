@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { pathToFileURL } from 'node:url';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
-import { cli } from './helpers.mjs';
+import { remoteCli as cli } from '../helpers.mjs';
 
 const { createHttpHandler } = await import(new URL('./http-handler.js', pathToFileURL(cli)));
 const { createServer } = await import(new URL('./server.js', pathToFileURL(cli)));

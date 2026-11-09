@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
-import { cli } from './helpers.mjs';
+import { remoteCli as cli } from '../helpers.mjs';
 
 const { createOAuthHttpHandler } = await import(new URL('./oauth-resource.js', pathToFileURL(cli)));
 const { createHttpHandler } = await import(new URL('./http-handler.js', pathToFileURL(cli)));

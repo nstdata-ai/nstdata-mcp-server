@@ -4,11 +4,9 @@ import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { remoteCli as executable } from '../helpers.mjs';
 import test from 'node:test';
 
-const executable = fileURLToPath(new URL('./remote.js', pathToFileURL(process.env.NSTDATA_TEST_CLI ??
-    fileURLToPath(new URL('../dist/stdio.js', import.meta.url)))));
 const run = args => spawnSync(process.execPath, [executable, ...args], { encoding: 'utf8', timeout: 5000,
     env: { PATH: process.env.PATH, NODE_OPTIONS: process.env.NODE_OPTIONS, NSTDATA_API_TOKEN: 'unused-fixture-token' } });
 

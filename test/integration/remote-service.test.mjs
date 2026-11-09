@@ -12,8 +12,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { isolatedRedis } from './redis-fixture.mjs';
+import { remoteCli } from '../helpers.mjs';
 
-const executable = pathToFileURL(process.env.NSTDATA_TEST_CLI ?? fileURLToPath(new URL('../../dist/stdio.js', import.meta.url)));
+const executable = pathToFileURL(remoteCli);
 const { startRemoteService, loadRemoteTls } = await import(new URL('./remote-service.js', executable));
 const { privateKey } = generateKeyPairSync('ed25519');
 const signingKey = { ...privateKey.export({ format: 'jwk' }), kid: 'fixture', use: 'sig', alg: 'Ed25519' };

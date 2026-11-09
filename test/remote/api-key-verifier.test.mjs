@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { once } from 'node:events';
 import { pathToFileURL } from 'node:url';
-import { cli } from './helpers.mjs';
+import { remoteCli as cli } from '../helpers.mjs';
 
 const { createApiKeyVerifier } = await import(new URL('./api-key-verifier.js', pathToFileURL(cli)));
 const endpoint = 'https://api.nstdata.io/api/v1/api/user/info';

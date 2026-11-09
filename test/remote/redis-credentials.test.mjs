@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { test } from 'node:test';
 import { pathToFileURL } from 'node:url';
-import { cli } from './helpers.mjs';
+import { remoteCli as cli } from '../helpers.mjs';
 
 const { createRedisCredentialStore } = await import(new URL('./redis/credential-store.js', pathToFileURL(cli)));
 const { createRedisKeys, RedisStoreError } = await import(new URL('./redis/shared.js', pathToFileURL(cli)));

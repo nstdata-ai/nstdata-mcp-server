@@ -2,7 +2,7 @@
 import { loadRemoteConfig, RemoteConfigurationError } from './remote-config.js';
 import { loadRemoteTls, startRemoteService } from './remote-service.js';
 
-const usage = `Usage: node dist/remote.js --config <absolute-path> [--check]
+const usage = `Usage: node <remote.js> --config <absolute-path> [--check]
 
 Start a self-hosted Crawl MCP service with OAuth and Redis.
 --check validates the protected configuration and TLS files without connecting or listening.

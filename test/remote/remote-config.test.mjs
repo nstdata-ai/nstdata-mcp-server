@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { cli } from './helpers.mjs';
+import { remoteCli as cli } from '../helpers.mjs';
 
 const { parseRemoteConfig, loadRemoteConfig, RemoteConfigurationError } = await import(new URL('./remote-config.js', pathToFileURL(cli)));
 const signing = (type, options, alg, kid = 'fixture-signing') => ({

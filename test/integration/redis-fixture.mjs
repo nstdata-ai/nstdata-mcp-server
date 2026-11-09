@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import net from 'node:net';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
+import { remoteCli } from '../helpers.mjs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -60,7 +63,7 @@ export async function isolatedRedis(t, { allowedOrigins = () => [], virtualFetch
         if (startupError || child.exitCode !== null || Date.now() > deadline) throw new Error(`Owned Redis failed to start: ${startupError?.code ?? output}`);
         await delay(20);
     }
-    const { createClient } = await import('@redis/client');
+    const { createClient } = await import(pathToFileURL(createRequire(remoteCli).resolve('@redis/client')));
     async function client() {
         const value = createClient({ RESP: 2, disableOfflineQueue: true, disableClientInfo: true,
             commandsQueueMaxLength: 100, socket: { path: socketPath, connectTimeout: 1500, reconnectStrategy: false } });

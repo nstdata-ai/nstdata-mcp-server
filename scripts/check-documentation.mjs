@@ -118,11 +118,11 @@ net.Socket.prototype.connect=function(...args){
             const installed = path.join(application, 'node_modules', manifest.name);
             for (const file of files) assert.deepEqual(fs.readFileSync(path.join(installed, file)), fs.readFileSync(path.join(temp, 'node_modules', manifest.name, file)));
             verifyRuntimePackages(application, entries);
-            const remoteHelp = await execute(process.execPath, [path.join(installed, 'dist/remote.js'), '--help'],
-                { cwd: application, env: localEnv, timeout: 10000 });
-            assert.equal(remoteHelp.stderr, '');
-            assert.match(remoteHelp.stdout, /--config <absolute-path>/);
-            assert.equal(businessRequests, 0, 'Remote CLI help must not connect to a business API');
+            assert.equal(fs.existsSync(path.join(installed, 'dist/remote.js')), false);
+            for (const dependency of ['oidc-provider', '@redis/client']) {
+                assert.equal(fs.existsSync(path.join(application, 'node_modules', dependency)), false,
+                    'Local installation must not install Remote-only runtime dependencies');
+            }
             assert.equal(fs.existsSync(path.join(application, 'node_modules/@nstdata-ai/ip-lookup')), false);
             const [crawl, proxy] = configs[index].map(value => value.mcpServers.nstdata);
             const combined = { ...crawl, env: { ...crawl.env, ...proxy.env, NSTDATA_MODULES: 'crawl,proxy' } };

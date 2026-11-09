@@ -4,6 +4,8 @@
 
 Run the Crawl tools behind an HTTPS MCP endpoint with per-user OAuth authorization. Each user enters their existing Nstdata API key on the consent page; calls use that user's credits. Do not configure a shared `NSTDATA_API_TOKEN` for this service. Proxy tools remain available through the separate local stdio configuration.
 
+Remote is a separate application built from this repository. It is not included in the published `@nstdata-ai/mcp-server@1.0.2` package; the npm package's installation and client configuration remain unchanged.
+
 ## Deployment requirements
 
 - Node.js 22.18+ in the 22.x line, or Node.js 24; a stable HTTPS origin and its matching PEM certificate/private key.
@@ -18,8 +20,11 @@ From the repository root:
 
 ```sh
 npm ci --ignore-scripts --no-audit --no-fund
-npm run build
+npm run build:remote
+npm --prefix remote ci --omit=dev --ignore-scripts
 ```
+
+The build compiles the shared source into `remote/dist`; `remote/package.json` and its lock install the application's runtime dependencies separately. The root `npm run build` builds only the local stdio package. The Remote manifest sets `private: true` to prevent npm publication; its source remains in this repository.
 
 Store the configuration outside the repository. On Linux/macOS, its regular file and the TLS private-key file must have no group/other permission bits; use `0600` or `0400`. The configuration must be valid UTF-8 JSON, at most 1 MiB, and use an absolute filename. Mounted secret-file symlinks are supported.
 
@@ -84,8 +89,8 @@ For loopback development only, an HTTP issuer can use literal `127.0.0.1` or `[:
 ## Validate and start
 
 ```sh
-node dist/remote.js --config /absolute/path/remote.json --check
-node dist/remote.js --config /absolute/path/remote.json
+node remote/dist/remote.js --config /absolute/path/remote.json --check
+node remote/dist/remote.js --config /absolute/path/remote.json
 ```
 
 `--check` validates the configuration, TLS files and certificate/key match without connecting to Redis, listening or calling Nstdata. Successful validation does not prove DNS, certificate trust, Redis ACLs or platform compatibility.
@@ -101,6 +106,30 @@ Each process accepts at most 256 concurrent connections. TLS handshakes and requ
 | `/mcp` | Authenticated Streamable HTTP MCP resource with six Crawl tools |
 
 Use the issuer's Host when probing. Health checks do not query Redis each time and do not prove persistence, Lua permissions, upstream access or platform authorization. An unauthenticated `/mcp` request returns an OAuth challenge; it is not a readiness check.
+
+## Run in a container
+
+From the repository root:
+
+```sh
+docker build --file Dockerfile.remote --tag nstdata-mcp-remote:local .
+```
+
+The image uses Node.js 24.22.0, runs as the nonroot `node` user (UID 1000) by default, and starts `node dist/remote.js` in `/app`. It contains only the compiled Remote application and its production dependencies.
+
+For a local Linux/macOS run, place `remote.json`, `server.crt` and `server.key` in the protected directory below. Set the configuration's TLS paths to `/run/secrets/server.crt` and `/run/secrets/server.key`. Run these commands as the nonroot host user who owns the directory and files; the UID override lets that user read files with mode `0400` or `0600` through the read-only mount.
+
+```sh
+REMOTE_CONFIG_DIR="$HOME/.config/nstdata-mcp-remote"
+docker run --rm --user "$(id -u):$(id -g)" \
+  --mount type=bind,src="$REMOTE_CONFIG_DIR",dst=/run/secrets,readonly \
+  nstdata-mcp-remote:local --config /run/secrets/remote.json --check
+docker run --rm --user "$(id -u):$(id -g)" --publish 8443:8443 \
+  --mount type=bind,src="$REMOTE_CONFIG_DIR",dst=/run/secrets,readonly \
+  nstdata-mcp-remote:local --config /run/secrets/remote.json
+```
+
+The configuration must listen on `0.0.0.0:8443` for this port mapping, and Redis must be reachable from the container. TLS still terminates in Node. Linux deployments using UID 1000 must deliver secret files readable by that UID through their secret mount, CSI driver or init step, while preserving mode `0400` or `0600` for the configuration and private key.
 
 ## Connect and operate
 

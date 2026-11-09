@@ -1,0 +1,27 @@
+FROM node:24.22.0-bookworm-slim@sha256:91acba91b842bec0bf7ea6f5e09c644c7ccad72c4996ed9616d861d1c7cd60d4 AS base
+
+FROM base AS build
+WORKDIR /build
+COPY package.json package-lock.json tsconfig.json ./
+RUN npm ci --ignore-scripts --no-audit --no-fund
+COPY remote/package.json remote/package-lock.json remote/tsconfig.json ./remote/
+COPY src ./src
+RUN npm run build:remote
+
+FROM base AS dependencies
+WORKDIR /app
+COPY remote/package.json remote/package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund && npm cache clean --force
+
+FROM base
+LABEL org.opencontainers.image.source="https://github.com/nstdata-ai/nstdata-mcp-server" \
+      org.opencontainers.image.licenses="MIT"
+ENV NODE_ENV=production
+WORKDIR /app
+COPY --from=dependencies /app/node_modules ./node_modules
+COPY remote/package.json ./
+COPY --from=build /build/remote/dist ./dist
+COPY LICENSE ./
+USER node:node
+EXPOSE 8443
+ENTRYPOINT ["node", "dist/remote.js"]

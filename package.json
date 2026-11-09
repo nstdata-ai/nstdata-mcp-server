@@ -22,7 +22,10 @@
     "CHANGELOG.md",
     "CONTRIBUTING.md",
     "SECURITY.md",
-    "docs"
+    "docs/mcp.md",
+    "docs/mcp_zh.md",
+    "docs/proxy.md",
+    "docs/proxy_zh.md"
   ],
   "license": "MIT",
   "engines": {
@@ -30,28 +33,34 @@
   },
   "scripts": {
     "build": "node --input-type=module -e \"import {rmSync} from 'node:fs'; rmSync('dist',{recursive:true,force:true});\" && tsc",
+    "build:remote": "node --input-type=module -e \"import {rmSync} from 'node:fs'; rmSync('remote/dist',{recursive:true,force:true});\" && tsc -p remote/tsconfig.json",
     "typecheck": "tsc --noEmit",
-    "test": "npm run build && node --test test/*.test.mjs",
+    "typecheck:remote": "tsc -p remote/tsconfig.json --noEmit",
+    "test": "npm run build && npm run build:remote && node --test test/*.test.mjs test/remote/*.test.mjs",
+    "test:local": "npm run build && node --test test/*.test.mjs",
+    "test:remote:unit": "npm run build:remote && node --test test/remote/*.test.mjs",
     "test:redis": "node --test test/integration/redis.test.mjs",
     "test:remote": "node --test test/integration/remote.test.mjs",
     "test:remote-service": "node --test test/integration/remote-service.test.mjs",
     "check:package": "node scripts/check-package.mjs",
+    "check:remote": "node scripts/check-remote.mjs",
+    "check:container": "node scripts/check-container.mjs",
     "prepack": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.3.1",
     "@nstdata-ai/crawl": "2.0.0",
     "@nstdata-ai/proxy-checker": "1.2.0",
-    "@redis/client": "6.3.1",
-    "oidc-provider": "9.13.3",
     "zod": "4.6.7"
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "2.3.1",
     "@modelcontextprotocol/core": "2.3.1",
+    "@redis/client": "6.3.1",
     "@types/node": "22.18.0",
     "@types/oidc-provider": "9.13.1",
     "marked": "18.1.1",
+    "oidc-provider": "9.13.3",
     "typescript": "5.9.3"
   },
   "keywords": [

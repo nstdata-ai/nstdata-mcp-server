@@ -4,6 +4,8 @@
 
 通过 HTTPS MCP 入口提供 Crawl 工具，并使用逐用户 OAuth 授权。用户在同意页输入自己的现有 Nstdata API Key，调用消耗该用户额度；不要为此服务配置共享的 `NSTDATA_API_TOKEN`。Proxy 工具继续使用独立的本地 stdio 配置。
 
+Remote 是从本仓库构建的独立应用，不包含在已发布的 `@nstdata-ai/mcp-server@1.0.2` 包中；npm 包的安装和客户端配置保持不变。
+
 ## 部署条件
 
 - Node.js 22 系列的 22.18+ 或 Node.js 24；稳定的 HTTPS origin，以及与之匹配的 PEM 证书和私钥。
@@ -18,8 +20,11 @@ TLS 在此 Node 进程终止。四层透传负载均衡可保留这条连接；�
 
 ```sh
 npm ci --ignore-scripts --no-audit --no-fund
-npm run build
+npm run build:remote
+npm --prefix remote ci --omit=dev --ignore-scripts
 ```
+
+构建将共享源码编译到 `remote/dist`；`remote/package.json` 及其锁文件单独安装该应用的运行依赖。根目录的 `npm run build` 只构建本地 stdio 包。Remote 清单中的 `private: true` 用于禁止 npm 发布，其源码仍保留在本仓库。
 
 配置存放在仓库外。Linux／macOS 下，配置普通文件和 TLS 私钥文件不得具有组／其他用户权限，使用 `0600` 或 `0400`。配置需为有效 UTF-8 JSON，大小不超过 1 MiB，并使用绝对文件路径；支持以符号链接挂载的 Secret 文件。
 
@@ -84,8 +89,8 @@ node create-remote-config.mjs /absolute/path/remote.json
 ## 校验与启动
 
 ```sh
-node dist/remote.js --config /absolute/path/remote.json --check
-node dist/remote.js --config /absolute/path/remote.json
+node remote/dist/remote.js --config /absolute/path/remote.json --check
+node remote/dist/remote.js --config /absolute/path/remote.json
 ```
 
 `--check` 检查配置、TLS 文件及证书／私钥匹配，不连接 Redis、不监听端口，也不调用 Nstdata。校验成功不证明 DNS、证书信任链、Redis ACL 或平台兼容性。
@@ -101,6 +106,30 @@ node dist/remote.js --config /absolute/path/remote.json
 | `/mcp` | 需要认证的 Streamable HTTP MCP resource，提供六个 Crawl 工具 |
 
 探测时使用 issuer 对应的 Host。健康检查不会每次查询 Redis，也不证明持久化、Lua 权限、上游可用性或平台授权。未认证的 `/mcp` 请求返回 OAuth challenge，不能将它作为 readiness 检查。
+
+## 容器运行
+
+在仓库根目录执行：
+
+```sh
+docker build --file Dockerfile.remote --tag nstdata-mcp-remote:local .
+```
+
+镜像使用 Node.js 24.22.0，默认以非 root 的 `node` 用户（UID 1000）运行，在 `/app` 启动 `node dist/remote.js`。镜像只包含编译后的 Remote 应用及其生产依赖。
+
+在本地 Linux／macOS 运行时，将 `remote.json`、`server.crt` 和 `server.key` 放入下方受保护目录。将配置内 TLS 路径设为 `/run/secrets/server.crt` 和 `/run/secrets/server.key`。使用拥有该目录及文件的非 root 宿主用户执行以下命令；UID 覆盖让该用户可通过只读挂载读取权限为 `0400` 或 `0600` 的文件。
+
+```sh
+REMOTE_CONFIG_DIR="$HOME/.config/nstdata-mcp-remote"
+docker run --rm --user "$(id -u):$(id -g)" \
+  --mount type=bind,src="$REMOTE_CONFIG_DIR",dst=/run/secrets,readonly \
+  nstdata-mcp-remote:local --config /run/secrets/remote.json --check
+docker run --rm --user "$(id -u):$(id -g)" --publish 8443:8443 \
+  --mount type=bind,src="$REMOTE_CONFIG_DIR",dst=/run/secrets,readonly \
+  nstdata-mcp-remote:local --config /run/secrets/remote.json
+```
+
+此端口映射要求配置监听 `0.0.0.0:8443`，且容器内能够访问 Redis。TLS 仍在 Node 中终止。以 UID 1000 运行的 Linux 部署需通过其 Secret 挂载、CSI driver 或 init 步骤交付该 UID 可读的文件，同时保持配置和私钥权限为 `0400` 或 `0600`。
 
 ## 平台接入与运维
 

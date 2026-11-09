@@ -3,7 +3,7 @@ import test from 'node:test';
 import { randomBytes } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
-import { cli } from '../helpers.mjs';
+import { remoteCli as cli } from '../helpers.mjs';
 import { isolatedRedis } from './redis-fixture.mjs';
 
 const { createRedisAdapterFactory } = await import(new URL('./redis/provider-adapter.js', pathToFileURL(cli)));
