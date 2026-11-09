@@ -22,6 +22,8 @@ export interface RemoteService {
 const startupTimeoutMs = 5_000;
 const commandTimeoutMs = 2_000;
 const shutdownTimeoutMs = 10_000;
+// Leave headroom in the 100-command Redis queue; deployment capacity still needs measurement.
+const maxActiveRequests = 32;
 const serviceError = () => new Error('Remote service unavailable. Check deployment configuration and Redis.');
 
 async function boundedFile(filename: string, privateFile: boolean): Promise<Buffer> {
@@ -77,6 +79,7 @@ export async function startRemoteService(input: RemoteServiceConfig): Promise<Re
     let server: ReturnType<typeof createHttpServer> | undefined;
     let handler: RemoteHandler | undefined;
     const sockets = new Set<Socket>();
+    let activeRequests = 0;
     let started = false, closing = false;
     let failure: Error | undefined, closePromise: Promise<void> | undefined;
     let resolveClosed!: () => void, rejectClosed!: (error: Error) => void;
@@ -170,12 +173,24 @@ export async function startRemoteService(input: RemoteServiceConfig): Promise<Re
                 health(response, started && !closing && !failure && (request.url === '/health/live' || client!.isReady) ? 200 : 503);
                 return;
             }
+            if (closing || activeRequests >= maxActiveRequests) { health(response, 503); return; }
+            activeRequests++;
+            let handled = false, ended = false, released = false;
+            const release = () => {
+                // A disconnected request can still have an admitted Redis command in flight.
+                if (!handled || !ended || released) return;
+                released = true;
+                activeRequests--;
+                response.off('finish', end); response.off('close', end);
+            };
+            const end = () => { ended = true; release(); };
+            response.once('finish', end); response.once('close', end);
             void handler!.handle(request, response).catch(() => {
                 if (!response.destroyed && !response.writableEnded) {
                     if (response.headersSent) response.destroy();
                     else health(response, 503);
                 }
-            });
+            }).finally(() => { handled = true; release(); });
         };
         server = tls ? createHttpsServer({ ...tls, handshakeTimeout: 10_000 }, onRequest) : createHttpServer(onRequest);
         server.maxConnections = 256;

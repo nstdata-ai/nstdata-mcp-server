@@ -69,6 +69,105 @@ test('Remote service starts only after Redis readiness and serves health and OAu
     await assert.rejects(request(options.issuerUrl + '/health/live'));
 });
 
+test('Remote admission bounds a 120-request burst before Redis and releases completed or cancelled work once', { timeout: 10000 }, async t => {
+    const sockets = new Set(), replies = [], requests = [], results = [];
+    let held = true, evaluations = 0, service;
+    const redis = net.createServer(socket => {
+        sockets.add(socket); socket.once('close', () => sockets.delete(socket));
+        let buffer = Buffer.alloc(0);
+        socket.on('data', bytes => {
+            buffer = Buffer.concat([buffer, bytes]);
+            while (buffer.length) {
+                const end = buffer.indexOf('\r\n');
+                if (end < 0) return;
+                const count = Number(buffer.toString('utf8', 1, end)), args = [];
+                let offset = end + 2;
+                for (let index = 0; index < count; index++) {
+                    const next = buffer.indexOf('\r\n', offset);
+                    if (next < 0) return;
+                    const size = Number(buffer.toString('utf8', offset + 1, next));
+                    if (buffer.length < next + 2 + size + 2) return;
+                    args.push(buffer.toString('utf8', next + 2, next + 2 + size));
+                    offset = next + 2 + size + 2;
+                }
+                buffer = buffer.subarray(offset);
+                if (args[0] === 'PING') socket.write('+PONG\r\n');
+                else {
+                    assert.equal(args[0], 'EVAL'); evaluations++;
+                    const respond = () => { if (!socket.destroyed) socket.write(':1\r\n'); };
+                    if (held) replies.push(respond); else respond();
+                }
+            }
+        });
+    });
+    await new Promise(resolve => redis.listen(0, '127.0.0.1', resolve));
+    const options = config(await port());
+    options.redis = { url: `redis://127.0.0.1:${redis.address().port}/0`, namespace: options.redis.namespace };
+    const connect = net.Socket.prototype.connect, fetch = globalThis.fetch;
+    const allowedPorts = [redis.address().port, options.listen.port];
+    net.Socket.prototype.connect = function (...args) {
+        const first = Array.isArray(args[0]) ? args[0][0] : args[0];
+        if (first && typeof first === 'object' && first.host === '127.0.0.1' && allowedPorts.includes(Number(first.port))) return connect.apply(this, args);
+        throw new Error('Admission test blocked an unexpected socket');
+    };
+    globalThis.fetch = async () => { throw new Error('Admission test blocked an upstream request'); };
+    t.after(async () => {
+        try {
+            for (const pending of requests) pending.request.destroy();
+            await service?.close();
+            for (const socket of sockets) socket.destroy();
+            await new Promise(resolve => redis.close(resolve));
+        } finally { net.Socket.prototype.connect = connect; globalThis.fetch = fetch; }
+    });
+    service = await startRemoteService(options);
+    const parameters = new URLSearchParams({ client_id: 'fixture-client', redirect_uri: options.clients[0].redirectUris[0],
+        response_type: 'code', scope: 'crawl:use', resource: options.issuerUrl + '/mcp',
+        code_challenge: randomBytes(32).toString('base64url'), code_challenge_method: 'S256' });
+    const send = () => {
+        const pending = { done: false };
+        pending.result = new Promise(resolve => {
+            const finish = result => { if (!pending.done) { pending.done = true; results.push(result); resolve(result); } };
+            pending.request = http.get(options.issuerUrl + '/auth?' + parameters, { agent: false }, response => {
+                let body = '';
+                response.on('data', bytes => { body += bytes; });
+                response.once('end', () => finish({ status: response.statusCode, body }));
+                response.once('error', () => finish({ status: 'disconnected' }));
+            });
+            pending.request.once('error', () => finish({ status: 'disconnected' }));
+        });
+        requests.push(pending); return pending;
+    };
+    const until = async predicate => {
+        const deadline = Date.now() + 1200;
+        while (!predicate() && Date.now() < deadline) await delay(5);
+        assert(predicate(), 'expected fixture progress before the Redis command deadline');
+    };
+    const release = () => { held = false; for (const respond of replies.splice(0)) respond(); };
+
+    for (const round of [0, 1, 2]) {
+        held = true;
+        const beforeResults = results.length, beforeEvaluations = evaluations;
+        const burst = Array.from({ length: 120 }, send);
+        await until(() => results.length - beforeResults >= 88);
+        assert.equal(results.length - beforeResults, 88);
+        assert(results.slice(beforeResults).every(result => result.status === 503 && result.body === '{"status":"unavailable"}'));
+        assert.equal(evaluations - beforeEvaluations, 32, 'only admitted requests reach the Redis queue');
+        for (const endpoint of ['/health/live', '/health/ready']) assert.equal((await request(options.issuerUrl + endpoint)).status, 200);
+        if (round === 1) {
+            const cancelled = burst.find(pending => !pending.done);
+            cancelled.request.destroy(); await until(() => cancelled.done);
+            const replacement = send();
+            await until(() => replacement.done || evaluations - beforeEvaluations > 32);
+            assert.equal((await replacement.result).status, 503, 'a disconnected handler keeps its slot until its Redis command settles');
+            assert.equal(evaluations - beforeEvaluations, 32);
+        }
+        release();
+        const completed = await Promise.all(burst.map(pending => pending.result));
+        assert.equal(completed.filter(result => result.status === 303).length, round === 1 ? 31 : 32);
+        assert.equal((await request(options.issuerUrl + '/health/ready')).status, 200);
+    }
+});
+
 test('Remote startup cleans its Redis connection when the listener is occupied', async t => {
     const redis = await isolatedRedis(t);
     const occupied = net.createServer();
