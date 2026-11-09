@@ -20,9 +20,10 @@ export async function guard(ctx: ServerContext, config: Config, operation: (opti
     const unknownSubmission = operationKind === 'task'
         ? ' The submission outcome is unknown; a remote task may still exist. Review it before submitting again.' : '';
     const controller = new AbortController();
+    const signal = ctx.http?.req ? AbortSignal.any([ctx.mcpReq.signal, ctx.http.req.signal]) : ctx.mcpReq.signal;
     const abort = () => controller.abort(new DOMException('Local request cancelled', 'AbortError'));
-    if (ctx.mcpReq.signal.aborted) abort();
-    else ctx.mcpReq.signal.addEventListener('abort', abort, { once: true });
+    if (signal.aborted) abort();
+    else signal.addEventListener('abort', abort, { once: true });
     const timer = setTimeout(() => controller.abort(new DOMException('Tool deadline exceeded', 'TimeoutError')), config.httpTimeoutMs);
     try { return boundResult(await operation({ signal: controller.signal, timeoutMs: config.httpTimeoutMs, maxResponseBytes: config.maxResponseBytes }), config); }
     catch (error) {
@@ -47,6 +48,6 @@ export async function guard(ctx: ServerContext, config: Config, operation: (opti
         return toolError(code, message, { statusCode, apiCode });
     } finally {
         clearTimeout(timer);
-        ctx.mcpReq.signal.removeEventListener('abort', abort);
+        signal.removeEventListener('abort', abort);
     }
 }

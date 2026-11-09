@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import fs from 'node:fs';
@@ -15,9 +15,31 @@ const crawlTools = ['nstdata_crawl_scrape', 'nstdata_crawl_scrape_result', 'nstd
     'nstdata_crawl_status', 'nstdata_crawl_pages', 'nstdata_crawl_read_result'];
 const proxyTools = ['nstdata_proxy_fetch', 'nstdata_proxy_check'];
 
+function ownFiles(directory) {
+    return fs.readdirSync(directory, { recursive: true })
+        .filter(file => file.split(path.sep)[0] !== 'node_modules' && fs.statSync(path.join(directory, file)).isFile()).sort();
+}
+
+export function verifyRuntimePackages(application, entries) {
+    const verified = new Map(entries.map(entry => [`${entry.manifest.name}\0${entry.manifest.version}`, entry.source]));
+    const installedLock = JSON.parse(fs.readFileSync(path.join(application, 'node_modules/.package-lock.json'), 'utf8'));
+    // A fresh npm install may hoist valid versions differently from the source lock.
+    for (const location of Object.keys(installedLock.packages)) {
+        assert.ok(location.startsWith('node_modules/') && !location.split('/').includes('..'), 'Invalid installed package path');
+        const module = path.join(application, location);
+        const pkg = JSON.parse(fs.readFileSync(path.join(module, 'package.json'), 'utf8'));
+        const source = verified.get(`${pkg.name}\0${pkg.version}`);
+        assert.ok(source, `Unverified runtime package: ${pkg.name}@${pkg.version}`);
+        const files = ownFiles(source);
+        assert.deepEqual(ownFiles(module), files, `Unexpected package files: ${pkg.name}@${pkg.version}`);
+        for (const file of files) assert.deepEqual(fs.readFileSync(path.join(module, file)), fs.readFileSync(path.join(source, file)),
+            `Package bytes differ: ${pkg.name}@${pkg.version}/${file}`);
+    }
+}
+
 export async function checkDocumentedSetup({ root, temp, archive, manifest, lock, files, configs, environment, npm }) {
     const fixtures = path.join(temp, 'registry-fixtures'); fs.mkdirSync(fixtures);
-    const entries = [{ manifest, archive, filename: 'mcp.tgz' }];
+    const entries = [{ manifest, archive, filename: 'mcp.tgz', source: path.join(temp, 'node_modules', manifest.name) }];
     for (const [name, entry] of Object.entries(lock.packages)) {
         if (!name || entry.dev) continue;
         const installed = path.join(temp, name);
@@ -26,12 +48,21 @@ export async function checkDocumentedSetup({ root, temp, archive, manifest, lock
             : pkg.name === '@nstdata-ai/proxy-checker' ? 'NSTDATA_CHECKER_TARBALL' : undefined;
         let dependencyArchive = variable && process.env[variable] ? path.resolve(process.env[variable]) : undefined;
         if (!dependencyArchive) {
-            const [packed] = JSON.parse(npm(['pack', '--ignore-scripts', '--json', '--pack-destination', fixtures, installed], temp));
-            dependencyArchive = path.join(fixtures, packed.filename);
+            const staging = path.join(fixtures, `package-${entries.length}`);
+            for (const file of ownFiles(installed)) {
+                const target = path.join(staging, 'package', file);
+                fs.mkdirSync(path.dirname(target), { recursive: true });
+                fs.copyFileSync(path.join(installed, file), target);
+                fs.chmodSync(target, fs.statSync(path.join(installed, file)).mode & 0o777);
+            }
+            dependencyArchive = path.join(fixtures, `dependency-${entries.length}.tgz`);
+            execFileSync('tar', ['-czf', dependencyArchive, '-C', staging, 'package'], { timeout: 10000 });
         }
-        entries.push({ manifest: pkg, archive: dependencyArchive, filename: `dependency-${entries.length}.tgz` });
+        entries.push({ manifest: pkg, archive: dependencyArchive, filename: `dependency-${entries.length}.tgz`, source: installed });
     }
     const registryRequests = [];
+    const optionalPeers = new Set(entries.flatMap(entry => Object.entries(entry.manifest.peerDependenciesMeta ?? {})
+        .filter(([, settings]) => settings.optional === true).map(([name]) => '/' + name)));
     const registry = http.createServer((req, res) => {
         const pathname = decodeURIComponent(new URL(req.url, 'http://127.0.0.1').pathname);
         registryRequests.push({ method: req.method, pathname, authorization: Boolean(req.headers.authorization) });
@@ -86,14 +117,11 @@ net.Socket.prototype.connect=function(...args){
             }
             const installed = path.join(application, 'node_modules', manifest.name);
             for (const file of files) assert.deepEqual(fs.readFileSync(path.join(installed, file)), fs.readFileSync(path.join(temp, 'node_modules', manifest.name, file)));
-            for (const entry of entries) {
-                const module = path.join(application, 'node_modules', entry.manifest.name);
-                assert.equal(JSON.parse(fs.readFileSync(path.join(module, 'package.json'), 'utf8')).version, entry.manifest.version);
-                const source = path.join(temp, 'node_modules', entry.manifest.name);
-                const sourceFiles = fs.readdirSync(source, { recursive: true }).filter(file => fs.statSync(path.join(source, file)).isFile()).sort();
-                const installedFiles = fs.readdirSync(module, { recursive: true }).filter(file => fs.statSync(path.join(module, file)).isFile()).sort();
-                assert.deepEqual(installedFiles, sourceFiles);
-                for (const file of sourceFiles) assert.deepEqual(fs.readFileSync(path.join(module, file)), fs.readFileSync(path.join(source, file)));
+            verifyRuntimePackages(application, entries);
+            assert.equal(fs.existsSync(path.join(installed, 'dist/remote.js')), false);
+            for (const dependency of ['oidc-provider', '@redis/client']) {
+                assert.equal(fs.existsSync(path.join(application, 'node_modules', dependency)), false,
+                    'Local installation must not install Remote-only runtime dependencies');
             }
             assert.equal(fs.existsSync(path.join(application, 'node_modules/@nstdata-ai/ip-lookup')), false);
             const [crawl, proxy] = configs[index].map(value => value.mcpServers.nstdata);
@@ -139,7 +167,7 @@ net.Socket.prototype.connect=function(...args){
         }
         for (const request of registryRequests) {
             assert.equal(request.method, 'GET'); assert.equal(request.authorization, false);
-            assert.ok(request.pathname === '/@nstdata-ai/ip-lookup' || entries.some(entry =>
+            assert.ok(optionalPeers.has(request.pathname) || entries.some(entry =>
                 ['/' + entry.manifest.name, '/' + entry.filename].includes(request.pathname)), 'Unexpected registry request');
         }
         assert.ok(registryRequests.some(request => request.pathname === '/mcp.tgz'));

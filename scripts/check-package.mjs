@@ -45,6 +45,10 @@ try {
     assert.equal(lock.packages[''].version, manifest.version);
     assert.equal(manifest.dependencies['@nstdata-ai/crawl'], '2.0.0');
     assert.equal(manifest.dependencies['@nstdata-ai/proxy-checker'], '1.2.0');
+    assert.deepEqual(Object.keys(manifest.dependencies).sort(),
+        ['@modelcontextprotocol/server', '@nstdata-ai/crawl', '@nstdata-ai/proxy-checker', 'zod']);
+    assert.deepEqual(manifest.bin, { 'nstdata-mcp-server': 'dist/stdio.js' });
+    assert.deepEqual(manifest.exports, { '.': { types: './dist/server.d.ts', import: './dist/server.js' } });
     assert.deepEqual(lock.packages['node_modules/@nstdata-ai/proxy-checker'].dependencies,
         { '@nstdata-ai/proxy': '^1.1.0' });
     assert.equal(lock.packages['node_modules/@nstdata-ai/proxy'].version, '1.1.0');
@@ -190,7 +194,7 @@ try {
         assert.equal(result.structuredContent.observedIp, '203.0.113.9');
         assert.equal(h.stderr(), '');
     }
-    const installedTests = fs.readdirSync(path.join(root, 'test')).filter(name => name.endsWith('.test.mjs') && !['documentation.test.mjs', 'release.test.mjs', 'startup.test.mjs'].includes(name)).sort()
+    const installedTests = fs.readdirSync(path.join(root, 'test')).filter(name => name.endsWith('.test.mjs') && !['documentation.test.mjs', 'runtime-package-check.test.mjs', 'release.test.mjs', 'startup.test.mjs'].includes(name)).sort()
         .map(name => path.join(root, 'test', name));
     execFileSync(process.execPath, ['--test', ...installedTests], { cwd: temp,
         env: { ...cleanEnvironment, NSTDATA_TEST_CLI: installedCli }, timeout: 60000, stdio: 'inherit' });

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add a separate private Remote MCP application and container build, keeping OAuth and Redis dependencies and runtime output outside the published stdio package.
 - Add Cursor marketplace installation with module selection and masked credential fields.
 - Add Claude Code marketplace installation with client-managed module and credential configuration.
 - Document client-specific setup for Claude Code, VS Code, GitHub Copilot, Cline, Roo Code, Gemini CLI, Windsurf and OpenCode.

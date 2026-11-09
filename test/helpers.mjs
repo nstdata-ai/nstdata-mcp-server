@@ -5,6 +5,7 @@ import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 export const cli = process.env.NSTDATA_TEST_CLI ?? fileURLToPath(new URL('../dist/stdio.js', import.meta.url));
+export const remoteCli = process.env.NSTDATA_REMOTE_TEST_CLI ?? fileURLToPath(new URL('../remote/dist/remote.js', import.meta.url));
 export const envelope = data => ({ code: 200, err: false, msg: 'SUCCESS', data });
 
 export async function harness(t, handler, settings = {}, era = 'legacy', executable = cli) {
