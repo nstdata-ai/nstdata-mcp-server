@@ -115,7 +115,7 @@ From the repository root:
 docker build --file Dockerfile.remote --tag nstdata-mcp-remote:local .
 ```
 
-The image uses Node.js 24.22.0, runs as the nonroot `node` user (UID 1000) by default, and starts `node dist/remote.js` in `/app`. It contains only the compiled Remote application and its production dependencies.
+The image uses Node.js 24.22.2, runs as the nonroot `node` user (UID 1000) by default, and starts `node dist/remote.js` in `/app`. It contains only the compiled Remote application and its production dependencies.
 
 For a local Linux/macOS run, place `remote.json`, `server.crt` and `server.key` in the protected directory below. Set the configuration's TLS paths to `/run/secrets/server.crt` and `/run/secrets/server.key`. Run these commands as the nonroot host user who owns the directory and files; the UID override lets that user read files with mode `0400` or `0600` through the read-only mount.
 

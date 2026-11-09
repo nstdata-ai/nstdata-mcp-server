@@ -115,7 +115,7 @@ node remote/dist/remote.js --config /absolute/path/remote.json
 docker build --file Dockerfile.remote --tag nstdata-mcp-remote:local .
 ```
 
-镜像使用 Node.js 24.22.0，默认以非 root 的 `node` 用户（UID 1000）运行，在 `/app` 启动 `node dist/remote.js`。镜像只包含编译后的 Remote 应用及其生产依赖。
+镜像使用 Node.js 24.22.2，默认以非 root 的 `node` 用户（UID 1000）运行，在 `/app` 启动 `node dist/remote.js`。镜像只包含编译后的 Remote 应用及其生产依赖。
 
 在本地 Linux／macOS 运行时，将 `remote.json`、`server.crt` 和 `server.key` 放入下方受保护目录。将配置内 TLS 路径设为 `/run/secrets/server.crt` 和 `/run/secrets/server.key`。使用拥有该目录及文件的非 root 宿主用户执行以下命令；UID 覆盖让该用户可通过只读挂载读取权限为 `0400` 或 `0600` 的文件。
 
