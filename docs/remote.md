@@ -141,6 +141,28 @@ docker run --rm --user "$(id -u):$(id -g)" --publish 127.0.0.1:8080:8080 \
 
 This proxy-mode example listens on `0.0.0.0:8080` and publishes only the host loopback port for a local gateway. Configure HTTPS at that gateway, use the actual trusted backend peer range, and ensure Redis is reachable from the container. Adjust port mappings for direct TLS. Linux deployments using UID 1000 must deliver readable files through their Secret mount, CSI driver or initialization step while preserving configuration/private-key modes `0400` or `0600`.
 
+## Publish an image
+
+Maintainers use `Publish Remote image` (`.github/workflows/release-image.yml`) to publish Linux AMD64 images to an existing registry. This is independent of npm publication and does not deploy a service.
+
+1. Create the registry repository and a dedicated credential with push access limited to that repository. Confirm GitHub-hosted runners can reach the registry. Keep the registry repository private if image downloads must require authentication.
+2. In GitHub repository **Settings → Environments**, configure `container-production`: require a reviewer, disable administrator bypass, and allow only the `main` branch under **Selected branches and tags**. If the operator must also approve, leave **Prevent self-review** disabled.
+3. Add the following environment configuration:
+
+| Kind | Name | Value |
+|---|---|---|
+| Variable | `MCP_IMAGE_REPOSITORY` | Registry hostname, namespace and repository, without a URL scheme, tag or digest |
+| Secret | `MCP_REGISTRY_USERNAME` | Dedicated registry username |
+| Secret | `MCP_REGISTRY_PASSWORD` | Dedicated registry password or push token |
+
+The registry address, source commit, tag and digest may appear in public build logs and summaries. Variables are not secret storage. Do not use this public workflow if those image coordinates must remain confidential; use your private build infrastructure instead. Runtime configuration, Nstdata API keys, Redis/OAuth credentials and cluster access do not belong in this workflow or its image.
+
+4. Merge the reviewed source, confirm its checks, then open **Actions → Publish Remote image → Run workflow**. Select `main` and enter its full reviewed 40-character commit SHA. It must match the workflow commit; publication stops on a mismatch.
+5. After the checks pass, approve the `container-production` job. Approval occurs before that job starts. It builds and loads one AMD64 image, verifies its files, dependencies and lifecycle, then logs in and pushes that same checked image once. The login action logs out during job cleanup.
+6. Use the summary's `repository@sha256:…` reference in deployment configuration. The `sha-<commit>-amd64` tag identifies the source; tags remain mutable unless the registry enforces immutability. No `latest` tag is written. Public availability and production deployment are separate checks.
+
+If push fails or is interrupted, inspect the registry before another dispatch. If push succeeds but digest recording fails, publication may already be complete; do not republish just to recover the digest. The workflow neither rebuilds after validation nor retries publication or polls for public visibility. It requires no npm token, Kubernetes credentials or deployment permissions.
+
 ## Connect and operate
 
 Configure the target platform with the deployed `/mcp` URL and its matching fixed client credentials. Use advertised OAuth discovery metadata rather than inventing authorization/token paths. Request `crawl:use`; access renewal remains subject to the granted authorization. Verify the actual platform's authorization, tool discovery and a bounded request before opening general access.

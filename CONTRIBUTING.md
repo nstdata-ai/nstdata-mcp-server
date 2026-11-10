@@ -40,6 +40,8 @@ npm run check:container -- nstdata-mcp-remote:local
 
 The check verifies the existing image's runtime files, dependencies and identity, then uses isolated containers with synthetic configuration to test startup and stopping the default entrypoint during an unfinished request. It removes only its own containers. The wire fixture does not validate Redis persistence; use the Redis integration tests above. This command does not publish an image or deploy a service.
 
+Maintainers can publish a checked Linux AMD64 image with the manual `Publish Remote image` workflow. See [image publication](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/docs/remote.md#publish-an-image) for registry credentials, environment protection and digest-based deployment.
+
 ## Local package installation
 
 After the checks pass, run `npm pack` to build `nstdata-ai-mcp-server-1.0.3.tgz`. Install it from a separate application directory:

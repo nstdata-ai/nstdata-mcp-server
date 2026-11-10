@@ -1,0 +1,54 @@
+name: Publish Remote image
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Reviewed main commit (full 40-character SHA)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-production
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    if: github.repository == 'nstdata-ai/nstdata-mcp-server' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/check.yml
+
+  publish:
+    needs: checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: container-production
+    env:
+      IMAGE_RELEASE_COMMIT: ${{ inputs.commit }}
+      MCP_IMAGE_REPOSITORY: ${{ vars.MCP_IMAGE_REPOSITORY }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.22.2'
+          cache: npm
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run build:remote
+      - id: image
+        name: Build and check AMD64 image
+        run: node scripts/release-image.mjs prepare "$RUNNER_TEMP/remote-image"
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ${{ steps.image.outputs.registry }}
+          username: ${{ secrets.MCP_REGISTRY_USERNAME }}
+          password: ${{ secrets.MCP_REGISTRY_PASSWORD }}
+          logout: true
+      - name: Push checked image
+        run: node scripts/release-image.mjs publish "$RUNNER_TEMP/remote-image"

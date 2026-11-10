@@ -36,13 +36,13 @@ async function request(url, token, fetchImpl = globalThis.fetch) {
     return { status: 200, data: await response.json() };
 }
 
-async function checkEnvironment(env, fetchImpl) {
+async function checkEnvironment(env, fetchImpl, environmentName = 'npm-production') {
     assert.ok(env.GH_TOKEN, 'GitHub read token required');
-    const url = `https://api.github.com/repos/${repository}/environments/npm-production`;
+    const url = `https://api.github.com/repos/${repository}/environments/${environmentName}`;
     const result = await request(url, env.GH_TOKEN, fetchImpl);
-    assert.equal(result.status, 200, 'Configure npm-production before dispatch');
+    assert.equal(result.status, 200, `Configure ${environmentName} before dispatch`);
     const environment = result.data;
-    assert.equal(environment.can_admins_bypass, false, 'Disable administrator bypass on npm-production');
+    assert.equal(environment.can_admins_bypass, false, `Disable administrator bypass on ${environmentName}`);
     assert.ok(environment.protection_rules?.some(rule => rule.type === 'required_reviewers' && rule.reviewers?.length > 0), 'Required reviewers must be configured');
     assert.equal(environment.deployment_branch_policy?.custom_branch_policies, true, 'Use selected deployment branches');
     assert.equal(environment.deployment_branch_policy?.protected_branches, false);
