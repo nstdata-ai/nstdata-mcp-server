@@ -10,6 +10,7 @@ import { createClient } from '@redis/client';
 import type { RemoteServiceConfig } from './remote-config.js';
 import { createApiKeyVerifier } from './api-key-verifier.js';
 import { createRemoteHandler, type RemoteHandler } from './remote-handler.js';
+import { createRemoteRequestPolicy } from './remote-request.js';
 import { createRedisCredentialStore } from './redis/credential-store.js';
 import { limitRedisCommands, RedisStoreError } from './redis/shared.js';
 
@@ -130,12 +131,13 @@ export async function startRemoteService(input: RemoteServiceConfig): Promise<Re
             !Number.isSafeInteger(config.listen.port) || config.listen.port < 1 || config.listen.port > 65535 ||
             Boolean(config.redis.url) === Boolean(config.redis.socketPath)) throw new Error();
         if (issuer.protocol === 'https:') {
-            if (!config.listen.tls) throw new Error();
-        } else if (issuer.protocol !== 'http:' || config.listen.tls || Number(issuer.port || 80) !== config.listen.port || !['127.0.0.1', '[::1]'].includes(issuer.hostname) ||
+            if (Boolean(config.listen.tls) === Boolean(config.trustedProxyCidrs)) throw new Error();
+        } else if (issuer.protocol !== 'http:' || config.trustedProxyCidrs || config.listen.tls || Number(issuer.port || 80) !== config.listen.port || !['127.0.0.1', '[::1]'].includes(issuer.hostname) ||
             config.listen.host !== issuer.hostname.replace(/^\[|\]$/g, '')) throw new Error();
         if (config.redis.socketPath && !isAbsolute(config.redis.socketPath)) throw new Error();
         const redis = config.redis.url ? new URL(config.redis.url) : undefined;
         if (redis && redis.protocol !== 'rediss:' && !(redis.protocol === 'redis:' && ['127.0.0.1', '[::1]'].includes(redis.hostname))) throw new Error();
+        const requestAllowed = createRemoteRequestPolicy(config.issuerUrl, config.trustedProxyCidrs);
         const tls = await loadRemoteTls(config.listen.tls, config.issuerUrl);
         client = createClient({
             ...(config.redis.url ? { url: config.redis.url } : {}),
@@ -156,7 +158,7 @@ export async function startRemoteService(input: RemoteServiceConfig): Promise<Re
             currentKeyId: config.currentKeyId, fingerprintKey: config.fingerprintKey });
         handler = createRemoteHandler({ issuerUrl: config.issuerUrl, resourceUrl: new URL('/mcp', issuer).href,
             clients: config.clients, cookieKeys: config.cookieKeys, jwks: config.jwks, store, credentials,
-            verifyApiKey: createApiKeyVerifier(), allowedOrigins: config.allowedOrigins });
+            verifyApiKey: createApiKeyVerifier(), allowedOrigins: config.allowedOrigins, trustedProxyCidrs: config.trustedProxyCidrs });
         await deadline((async () => {
             await client!.connect();
             if (await command(['PING']) !== 'PONG') throw new RedisStoreError();
@@ -164,8 +166,7 @@ export async function startRemoteService(input: RemoteServiceConfig): Promise<Re
         if (failure) throw failure;
         const onRequest = (request: IncomingMessage, response: ServerResponse) => {
             if (request.url === '/health/live' || request.url === '/health/ready') {
-                if (request.headers.host?.toLowerCase() !== issuer.host.toLowerCase() ||
-                    ['forwarded', 'x-forwarded-host', 'x-forwarded-proto', 'x-forwarded-port'].some(name => request.headers[name] !== undefined)) {
+                if (!requestAllowed(request, true)) {
                     health(response, 400); return;
                 }
                 if (request.method !== 'GET') { response.setHeader('Allow', 'GET'); health(response, 405); return; }

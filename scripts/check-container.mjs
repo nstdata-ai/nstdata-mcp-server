@@ -25,6 +25,9 @@ export function verifyImageConfig(image) {
     assert(JSON.stringify(image.Config.Entrypoint) === JSON.stringify(['node', 'dist/remote.js']), 'Unexpected Remote image entrypoint');
     assert(!image.Config.StopSignal || image.Config.StopSignal === 'SIGTERM', 'Remote image must stop with SIGTERM');
     assert(!image.Config.Env?.some(value => /^(?:NSTDATA_|NODE_OPTIONS=)/.test(value)), 'Unexpected credential or Node override in image environment');
+    const platform = `${image.Os}/${image.Architecture}`;
+    assert(/^linux\/(?:amd64|arm64)$/.test(platform), 'Container checks require a supported Linux image platform');
+    return platform;
 }
 
 // These functions run inside the existing image, without checkout files or host dependencies.
@@ -237,7 +240,7 @@ export async function checkContainer(imageName = 'nstdata-mcp-remote:local') {
     assert(localContext(records) === context, 'Docker context changed during inspection');
     const docker = (args, label, options) => execute(['--context', context, ...args], label, options);
     const [image] = JSON.parse((await docker(['image', 'inspect', imageName], 'Existing local image inspection')).stdout);
-    verifyImageConfig(image);
+    const platform = verifyImageConfig(image);
     const remote = path.join(root, 'remote');
     const manifest = JSON.parse(fs.readFileSync(path.join(remote, 'package.json'), 'utf8'));
     const lock = JSON.parse(fs.readFileSync(path.join(remote, 'package-lock.json'), 'utf8'));
@@ -257,7 +260,7 @@ export async function checkContainer(imageName = 'nstdata-mcp-remote:local') {
     const owned = [];
     const run = async (args, label, { detached = false, network = 'none', ...options } = {}) => {
         const name = 'nstdata-mcp-check-' + randomBytes(10).toString('hex'); owned.push(name);
-        const result = await docker(['run', '--pull=never', detached ? '--detach' : '--rm', '--name', name,
+        const result = await docker(['run', '--platform', platform, '--pull=never', detached ? '--detach' : '--rm', '--name', name,
             '--network', network, '--read-only', '--cap-drop=ALL', '--security-opt=no-new-privileges', ...args], label, options);
         return { ...result, name };
     };

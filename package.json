@@ -1,6 +1,6 @@
 {
   "name": "@nstdata-ai/mcp-server",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "MCP access to Nstdata web data capabilities",
   "type": "module",
   "main": "dist/server.js",

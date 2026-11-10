@@ -4,7 +4,7 @@
 
 ## 客户端接入
 
-需要 Node.js 22（22.18及以上）或24，且 `npx` 位于 PATH。先从 [Nstdata 控制台](https://app.nstdata.io/)取得 Crawl API Key。以下方式都启动同一个固定为 `1.0.2` 的本地 stdio 服务，无需先安装项目依赖。
+需要 Node.js 22（22.18及以上）或24，且 `npx` 位于 PATH。先从 [Nstdata 控制台](https://app.nstdata.io/)取得 Crawl API Key。以下直接配置固定本地 stdio 包版本；可选市场插件使用各自清单中固定的版本。无需先安装项目依赖。
 
 每个客户端选择一个连接，保留其他服务条目。真实凭据保存在版本控制之外的受保护文件中，并限制访问。服务读取环境变量，本身不加载 `.env`；各客户端的配置格式和变量引用语法不同。
 
@@ -30,7 +30,7 @@
   "mcpServers": {
     "nstdata": {
       "command": "npx",
-      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.2"],
+      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.3"],
       "env": {
         "NSTDATA_MODULES": "crawl",
         "NSTDATA_API_TOKEN": "YOUR_CRAWL_API_TOKEN"
@@ -48,7 +48,7 @@ Cursor 的本地服务也可通过 `envFile` 加载受保护凭据文件；使�
 
 ```sh
 claude mcp add --scope user --env 'NSTDATA_API_TOKEN=${NSTDATA_API_TOKEN:-}' \
-  --transport stdio nstdata -- npx --yes @nstdata-ai/mcp-server@1.0.2
+  --transport stdio nstdata -- npx --yes @nstdata-ai/mcp-server@1.0.3
 ```
 
 若当前终端已从受保护环境或凭据管理器取得 `NSTDATA_API_TOKEN`，从该终端启动 Claude Code；启动服务时会展开引用。若尚未配置环境变量，注册后、连接前打开用户 `~/.claude.json`，在这个受保护文件内将 `mcpServers.nstdata.env.NSTDATA_API_TOKEN` 改为真实 Key，保留现有命令及其他条目。这样不需要把真实 Key 写入终端历史。在 Claude Code 中用 `/mcp` 检查连接和工具；注册成功不等于启动或凭据验收通过。
@@ -63,7 +63,7 @@ claude mcp add --scope user --env 'NSTDATA_API_TOKEN=${NSTDATA_API_TOKEN:-}' \
     "nstdata": {
       "type": "stdio",
       "command": "npx",
-      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.2"],
+      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.3"],
       "env": {
         "NSTDATA_MODULES": "crawl",
         "NSTDATA_API_TOKEN": "YOUR_CRAWL_API_TOKEN"
@@ -84,7 +84,7 @@ claude mcp add --scope user --env 'NSTDATA_API_TOKEN=${NSTDATA_API_TOKEN:-}' \
   "mcp": {
     "nstdata": {
       "type": "local",
-      "command": ["npx", "--yes", "@nstdata-ai/mcp-server@1.0.2"],
+      "command": ["npx", "--yes", "@nstdata-ai/mcp-server@1.0.3"],
       "environment": {
         "NSTDATA_MODULES": "crawl",
         "NSTDATA_API_TOKEN": "YOUR_CRAWL_API_TOKEN"
@@ -115,7 +115,7 @@ Cursor 优先使用进程继承的环境值；其中旧的或空的 `NSTDATA_API
 
 ### 可选 Codex 插件
 
-直接使用 [README 中的 MCP 配置](../README_zh.md)即可接入。需要通过 Codex 市场管理时，可选择此方式；它启动同一个已发布服务，不是另一套 Crawl 实现。
+直接使用 [README 中的 MCP 配置](../README_zh.md)即可接入。需要通过 Codex 市场管理时，可选择此方式；它启动已发布的 stdio 包。
 
 1. 在 Codex 用户目录 `~/.codex/.env` 中添加 Key，保留原有配置。Windows 为 `%USERPROFILE%\.codex\.env`；设置了 `CODEX_HOME` 时，使用该目录下的 `.env`：
 
@@ -139,7 +139,7 @@ codex plugin add nstdata@nstdata
 
 ### 可选 Claude Code 插件
 
-需要 Claude Code 2.1.237 或以上版本。此方式使用 Claude Code 的插件配置，启动同一个已发布 MCP 服务：
+需要 Claude Code 2.1.237 或以上版本。此方式使用 Claude Code 的插件配置，启动已发布的 stdio 包：
 
 ```sh
 claude plugin marketplace add nstdata-ai/nstdata-mcp-server

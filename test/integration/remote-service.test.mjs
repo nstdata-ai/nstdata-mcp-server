@@ -5,7 +5,7 @@ import http from 'node:http';
 import https from 'node:https';
 import net from 'node:net';
 import tls from 'node:tls';
-import { generateKeyPairSync, randomBytes } from 'node:crypto';
+import { createHash, generateKeyPairSync, randomBytes } from 'node:crypto';
 import { execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -37,12 +37,13 @@ function config(number, socketPath, secure = false) {
 async function request(url, options = {}) {
     return new Promise((resolve, reject) => {
         const parsed = new URL(url), transport = parsed.protocol === 'https:' ? https : http;
-        const incoming = transport.request(parsed, { ...options, agent: false }, response => {
+        const { body, ...settings } = options;
+        const incoming = transport.request(parsed, { ...settings, agent: false }, response => {
             const chunks = [];
             response.on('data', data => chunks.push(data));
             response.once('end', () => resolve({ status: response.statusCode, headers: response.headers, body: Buffer.concat(chunks).toString('utf8') }));
         });
-        incoming.once('error', reject); incoming.end();
+        incoming.once('error', reject); incoming.end(body);
     });
 }
 
@@ -379,4 +380,143 @@ globalThis.fetch=async()=>{process.exitCode=91;throw new Error('Upstream request
     assert.equal((await request(options.issuerUrl + '/health/ready')).status, 200);
     assert.deepEqual(names, ['localhost']); assert.equal(pings, 1);
     child.kill('SIGTERM'); assert.deepEqual(await childClosed, { code: 0, signal: null });
+});
+
+
+test('HTTPS gateway to HTTP Remote preserves OAuth, secure cookies and authenticated MCP while rejecting proxy bypass', { timeout: 20000 }, async t => {
+    const origins = [], syntheticKey = 'synthetic-proxy-upstream-key';
+    let userLookups = 0, crawlCalls = 0, service, gateway, client;
+    const redis = await isolatedRedis(t, { allowedOrigins: () => origins, virtualFetch: async (input, url) => {
+        if (url.origin !== 'https://api.nstdata.io') return undefined;
+        assert.equal(input.headers.get('x-api-key'), syntheticKey);
+        if (url.pathname === '/api/v1/api/user/info') {
+            userLookups++;
+            return Response.json({ code: 200, err: false, msg: 'SUCCESS', data: { email: 'proxy@example.test', balance: 1, referralBalance: 0 } });
+        }
+        assert.equal(url.pathname, '/api/v1/crawl/existing-proxy-fixture');
+        crawlCalls++;
+        return Response.json({ code: 200, err: false, msg: 'SUCCESS', data: { status: 'processing', pending: 1 } });
+    } });
+    const directory = await fs.mkdtemp(path.join(tmpdir(), 'remote-proxy-'));
+    const keyFile = path.join(directory, 'key.pem'), certFile = path.join(directory, 'cert.pem');
+    const { privateKey: gatewayKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    await fs.writeFile(keyFile, gatewayKey.export({ type: 'pkcs8', format: 'pem' }), { mode: 0o600 });
+    execFileSync('openssl', ['req', '-x509', '-new', '-sha256', '-key', keyFile, '-out', certFile, '-days', '1', '-subj', '/CN=127.0.0.1', '-addext', 'subjectAltName=IP:127.0.0.1'], { timeout: 5000, stdio: 'pipe' });
+    const ca = await fs.readFile(certFile), backendPort = await port();
+    gateway = https.createServer({ key: await fs.readFile(keyFile), cert: ca }, (incoming, outgoing) => {
+        assert(incoming.socket.encrypted);
+        const headers = { ...incoming.headers };
+        for (const name of ['forwarded', 'x-forwarded-host', 'x-forwarded-port', 'x-forwarded-proto']) delete headers[name];
+        headers['x-forwarded-proto'] = 'https';
+        const proxied = http.request({ host: '127.0.0.1', port: backendPort, path: incoming.url, method: incoming.method, headers, agent: false }, response => {
+            outgoing.writeHead(response.statusCode, response.headers); response.pipe(outgoing);
+        });
+        proxied.once('error', () => { if (!outgoing.headersSent) outgoing.writeHead(502); outgoing.end(); });
+        incoming.pipe(proxied);
+    });
+    await new Promise(resolve => gateway.listen(0, '127.0.0.1', resolve));
+    const origin = `https://127.0.0.1:${gateway.address().port}`, backend = `http://127.0.0.1:${backendPort}`;
+    origins.push(backend, origin.replace('https:', 'http:'));
+    t.after(async () => {
+        await client?.close().catch(() => {}); await service?.close();
+        gateway.closeAllConnections(); await new Promise(resolve => gateway.close(resolve));
+        await fs.rm(directory, { recursive: true, force: true });
+    });
+    const options = config(backendPort, redis.socketPath);
+    options.issuerUrl = origin; options.trustedProxyCidrs = ['127.0.0.1/32'];
+    options.clients[0].redirectUris = [origin + '/callback'];
+    service = await startRemoteService(options);
+    const headers = { host: new URL(origin).host };
+    for (const endpoint of ['/health/live', '/health/ready']) {
+        assert.equal((await request(backend + endpoint)).status, 200, 'load balancer IP Host is accepted only for health');
+        assert.equal((await request(backend + endpoint, { headers })).status, 200, 'kubelet fixed Host is accepted without proxy headers');
+        assert.equal((await request(origin + endpoint, { ca })).status, 200, 'gateway health passes the normal proxy boundary');
+    }
+    for (const endpoint of ['/mcp', '/.well-known/openid-configuration', '/health/ready/extra']) {
+        assert.equal((await request(backend + endpoint, { headers })).status, 400);
+        assert.equal((await request(backend + endpoint)).status, 400);
+    }
+    for (const changed of [{}, { 'x-forwarded-proto': 'http' }, { 'x-forwarded-proto': 'https, http' },
+        { 'x-forwarded-proto': 'https', forwarded: '' }, { 'x-forwarded-proto': 'https', 'x-forwarded-host': '' },
+        { 'x-forwarded-proto': 'https', 'x-forwarded-port': '443' }]) {
+        assert.equal((await request(backend + '/.well-known/openid-configuration', { headers: { ...headers, ...changed } })).status, 400);
+    }
+    const deniedPort = await port(), deniedOrigin = `http://127.0.0.1:${deniedPort}`;
+    origins.push(deniedOrigin);
+    const deniedService = await startRemoteService({ ...options, listen: { host: '127.0.0.1', port: deniedPort }, trustedProxyCidrs: ['192.0.2.1/32'] });
+    try {
+        assert.equal((await request(deniedOrigin + '/.well-known/openid-configuration', { headers: { ...headers, 'x-forwarded-proto': 'https' } })).status, 400);
+    } finally { await deniedService.close(); }
+    for (const duplicate of [['X-Forwarded-Proto', 'https'], ['Host', new URL(origin).host]]) {
+        assert.equal((await request(backend + '/mcp', { headers: ['Host', new URL(origin).host, 'X-Forwarded-Proto', 'https', ...duplicate] })).status, 400);
+    }
+    const cookies = new Map(), secureCookies = [];
+    async function browser(url, settings = {}) {
+        const supplied = { ...(settings.headers ?? {}) };
+        if (cookies.size) supplied.cookie = [...cookies].map(([name, value]) => `${name}=${value}`).join('; ');
+        const response = await request(url, { ...settings, ca, headers: supplied });
+        for (const item of response.headers['set-cookie'] ?? []) {
+            assert(/; secure(?:;|$)/i.test(item), 'all OAuth cookies stay Secure on the external HTTPS origin');
+            secureCookies.push(item);
+            const pair = item.split(';')[0], split = pair.indexOf('=');
+            if (/max-age=0(?:;|$)/i.test(item)) cookies.delete(pair.slice(0, split));
+            else cookies.set(pair.slice(0, split), pair.slice(split + 1));
+        }
+        assert(!response.body.includes(syntheticKey) && !String(response.headers.location).includes(syntheticKey));
+        return response;
+    }
+    const metadata = JSON.parse((await browser(origin + '/.well-known/openid-configuration')).body);
+    assert.equal(metadata.issuer, origin);
+    assert(Object.entries(metadata).filter(([name]) => name.endsWith('_endpoint')).every(([, value]) => value.startsWith(origin + '/')));
+    const challenge = await browser(origin + '/mcp');
+    assert.equal(challenge.status, 401); assert(challenge.headers['www-authenticate'].includes(origin));
+    const verifier = randomBytes(32).toString('base64url'), resource = origin + '/mcp';
+    let response = await browser(metadata.authorization_endpoint + '?' + new URLSearchParams({
+        client_id: options.clients[0].clientId, redirect_uri: options.clients[0].redirectUris[0], response_type: 'code',
+        scope: 'crawl:use', resource, state: 'proxy-fixture-state', code_challenge_method: 'S256',
+        code_challenge: createHash('sha256').update(verifier).digest('base64url'),
+    }));
+    assert.equal(response.status, 303);
+    const interaction = new URL(response.headers.location, origin);
+    assert.equal(interaction.origin, origin);
+    response = await browser(interaction);
+    assert.equal(response.status, 200);
+    const csrf = /name="csrf" value="([^"]+)"/.exec(response.body)?.[1]; assert(csrf);
+    response = await browser(interaction, { method: 'POST', headers: { origin, 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ csrf, apiToken: syntheticKey, decision: 'allow' }).toString() });
+    let code;
+    for (let count = 0; count < 6; count++) {
+        assert([302, 303].includes(response.status));
+        const next = new URL(response.headers.location, origin); assert.equal(next.origin, origin);
+        if (next.pathname === '/callback') { assert.equal(next.searchParams.get('state'), 'proxy-fixture-state'); code = next.searchParams.get('code'); break; }
+        response = await browser(next);
+    }
+    assert(code && secureCookies.length > 1 && userLookups === 1);
+    const authorization = 'Basic ' + Buffer.from(`${options.clients[0].clientId}:${options.clients[0].clientSecret}`).toString('base64');
+    const exchange = async (endpoint, values) => {
+        const result = await browser(endpoint, { method: 'POST', headers: { authorization, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(values).toString() });
+        assert.equal(result.status, 200); return JSON.parse(result.body);
+    };
+    let token = await exchange(metadata.token_endpoint, { grant_type: 'authorization_code', code, code_verifier: verifier, redirect_uri: options.clients[0].redirectUris[0], resource });
+    assert(token.access_token && token.refresh_token);
+    const previous = token.refresh_token;
+    token = await exchange(metadata.token_endpoint, { grant_type: 'refresh_token', refresh_token: previous, resource });
+    assert(token.refresh_token && token.refresh_token !== previous);
+    const { Client, StreamableHTTPClientTransport } = await import('@modelcontextprotocol/client');
+    client = new Client({ name: 'gateway-fixture', version: '1.0.0' }, { versionNegotiation: { mode: { pin: '2026-07-28' } } });
+    const gatewayFetch = async (input, init) => {
+        const value = new Request(input, init); assert.equal(new URL(value.url).origin, origin);
+        const result = await request(value.url, { ca, method: value.method, headers: Object.fromEntries(value.headers), body: value.body ? Buffer.from(await value.arrayBuffer()) : undefined });
+        const resultHeaders = new Headers();
+        for (const [name, contents] of Object.entries(result.headers)) for (const item of Array.isArray(contents) ? contents : [contents]) if (item !== undefined) resultHeaders.append(name, item);
+        return new Response([204, 205, 304].includes(result.status) ? null : result.body, { status: result.status, headers: resultHeaders });
+    };
+    await client.connect(new StreamableHTTPClientTransport(new URL(resource), { fetch: gatewayFetch, requestInit: { headers: { authorization: `Bearer ${token.access_token}` } } }));
+    assert.equal((await client.listTools()).tools.length, 6);
+    const result = await client.callTool({ name: 'nstdata_crawl_status', arguments: { crawlId: 'existing-proxy-fixture' } });
+    assert.equal(result.structuredContent?.pending, 1); assert.equal(crawlCalls, 1);
+    const revoked = await browser(metadata.revocation_endpoint, { method: 'POST', headers: { authorization, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token: token.access_token, token_type_hint: 'access_token' }).toString() });
+    assert.equal(revoked.status, 200);
+    assert.equal((await browser(resource, { headers: { authorization: `Bearer ${token.access_token}` } })).status, 401);
+    assert.equal(crawlCalls, 1);
 });

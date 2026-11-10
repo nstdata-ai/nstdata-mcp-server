@@ -4,15 +4,26 @@
 
 Run the Crawl tools behind an HTTPS MCP endpoint with per-user OAuth authorization. Each user enters their existing Nstdata API key on the consent page; calls use that user's credits. Do not configure a shared `NSTDATA_API_TOKEN` for this service. Proxy tools remain available through the separate local stdio configuration.
 
-Remote is a separate application built from this repository. It is not included in the published `@nstdata-ai/mcp-server@1.0.2` package; the npm package's installation and client configuration remain unchanged.
+Remote is a separate application built from this repository. It is not included in the local `@nstdata-ai/mcp-server` npm package; the npm package's installation and client configuration remain unchanged.
 
 ## Deployment requirements
 
-- Node.js 22.18+ in the 22.x line, or Node.js 24; a stable HTTPS origin and its matching PEM certificate/private key.
-- Standalone Redis with persistent storage, `noeviction`, an isolated namespace and the adapter's required key/Lua permissions. Use verified TLS (`rediss:`) or a protected local Unix socket. Cluster and Sentinel are not supported.
-- Fixed OAuth client IDs, secrets and exact callback URLs registered with the target platform. The service requires `client_secret_basic` and S256 PKCE; dynamic registration is disabled.
+- Node.js 22.18+ in the 22.x line, or Node.js 24, and a stable public HTTPS origin. The certificate can be managed by an existing gateway or loaded by this application.
+- Standalone Redis with persistent storage, `noeviction`, an isolated namespace and the adapter's required key/Lua permissions. Use verified TLS (`rediss:`) or a protected local Unix socket; Cluster and Sentinel are not supported.
+- Register fixed OAuth client IDs, secrets and exact callback URLs in the target platform. The service requires `client_secret_basic` and S256 PKCE; dynamic client registration is not enabled.
 
-TLS terminates in this Node process. A layer-4 passthrough load balancer can preserve that connection. HTTP forwarding after TLS termination and `Forwarded`/`X-Forwarded-*` authority headers are rejected. Keep the configured issuer, resource and callback URLs stable across restarts.
+## HTTPS ingress modes
+
+| Mode | Application configuration | Certificate location |
+|---|---|---|
+| Trusted reverse proxy | Internal HTTP listener plus `trustedProxyCidrs`; omit `listen.tls` | Existing HTTPS gateway |
+| Direct application TLS | `listen.tls.certFile` and `listen.tls.keyFile`; omit `trustedProxyCidrs` | Application-mounted files |
+
+These modes are mutually exclusive; proxy trust is never automatic. A trusted reverse proxy usually fits existing Kubernetes/ALB infrastructure. Its HTTP backend must be on a controlled internal network, restricted to the trusted ingress through network policy or firewall rules. Public hops still require HTTPS. Use application TLS with Layer 4 passthrough when internal encryption is required.
+
+`trustedProxyCidrs` matches the immediate socket peer observed by the application, never `X-Forwarded-For`. Supply 1–32 literal IPs or network-aligned IPv4/IPv6 CIDRs. `/0`, hostnames, IPv6 zone identifiers, duplicate entries and any IPv6 network overlapping the IPv4-mapped range are rejected. The gateway must preserve the fixed issuer Host, remove client-supplied forwarding information, and set one `X-Forwarded-Proto: https` header. Duplicate Host/protocol headers, protocol lists, `Forwarded`, `X-Forwarded-Host` and `X-Forwarded-Port` are rejected. Public addresses are never inferred from forwarded headers. Account for NAT: the gateway's published external IP range is not necessarily its backend peer range.
+
+Verify this contract at the actual gateway. For Alibaba ALB, explicitly enable the listener's `XForwardedForProtoEnabled` setting; it is disabled by default. Verify header replacement/sanitization rather than assuming a listener configuration makes client-supplied values safe. Keep issuer, resource and callback URLs stable across restarts.
 
 ## Build and configure
 
@@ -41,10 +52,8 @@ const secret = () => randomBytes(32).toString('base64url');
 const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const config = {
   issuerUrl: 'https://mcp.example.com',
-  listen: {
-    host: '0.0.0.0', port: 8443,
-    tls: { certFile: '/absolute/path/server.crt', keyFile: '/absolute/path/server.key' }
-  },
+  listen: { host: '0.0.0.0', port: 8080 },
+  trustedProxyCidrs: ['192.0.2.0/24'],
   redis: {
     url: 'rediss://USER:PASSWORD@redis.example.com:6379/0',
     namespace: 'production'
@@ -70,12 +79,13 @@ Run it once, using an existing protected directory:
 node create-remote-config.mjs /absolute/path/remote.json
 ```
 
-The program refuses to overwrite an existing file and does not print secrets. Edit the protected JSON to supply the real issuer, listen port, certificate paths, encoded Redis credentials, client ID and exact callbacks. Copy the corresponding `clientSecret` only into the platform's protected OAuth configuration. Do not regenerate keys on restart.
+The program refuses to overwrite existing files and never prints secrets. `192.0.2.0/24` is a documentation-only network: replace it with the actual trusted proxy range. Edit the protected JSON with the issuer, listener, proxy peers, URL-encoded Redis credentials, client ID and exact callback. For direct TLS, remove `trustedProxyCidrs` and set the certificate/private-key paths in `listen.tls`. Copy only the matching `clientSecret` into the platform's protected OAuth settings. Do not regenerate keys on restart.
 
 | Field | Configuration rule |
 |---|---|
 | `issuerUrl` | HTTPS origin without a path; the MCP resource is this origin plus `/mcp` |
-| `listen` | Numeric IP and port `1–65535`; HTTPS requires `tls.certFile` and `tls.keyFile` |
+| `listen` | Numeric IP and port `1–65535`; HTTP behind a proxy, or `tls.certFile` and `tls.keyFile` for direct TLS |
+| `trustedProxyCidrs` | Required immediate-peer IP/CIDR allowlist for proxy mode; mutually exclusive with `listen.tls` |
 | `redis` | Exactly one `url` or absolute `socketPath`, plus a distinct namespace per environment |
 | `clients` | Pre-registered client IDs, secrets of at least 32 bytes, and exact callback URLs |
 | `cookieKeys` | Stable secrets of at least 32 bytes; put the current key first |
@@ -84,7 +94,7 @@ The program refuses to overwrite an existing file and does not print secrets. Ed
 | `fingerprintKey` | Independent stable 32-byte base64url key; changing it requires a new namespace |
 | `allowedOrigins` | Optional exact browser origins; no wildcards. Non-browser requests may omit Origin |
 
-For loopback development only, an HTTP issuer can use literal `127.0.0.1` or `[::1]`, with the same loopback listen address and port and no TLS configuration. Plain `redis:` URLs are also restricted to literal loopback addresses. Do not expose that configuration publicly.
+For loopback development only, an HTTP issuer can use literal `127.0.0.1` or `[::1]`, with the same loopback listen address and port and neither TLS nor trusted proxy configuration. Plain `redis:` URLs are also restricted to literal loopback addresses. Do not expose that configuration publicly.
 
 ## Validate and start
 
@@ -93,7 +103,7 @@ node remote/dist/remote.js --config /absolute/path/remote.json --check
 node remote/dist/remote.js --config /absolute/path/remote.json
 ```
 
-`--check` validates the configuration, TLS files and certificate/key match without connecting to Redis, listening or calling Nstdata. Successful validation does not prove DNS, certificate trust, Redis ACLs or platform compatibility.
+`--check` validates the configuration and, for direct TLS, the TLS files and certificate/key match. It does not connect to Redis, listen or call Nstdata. Successful validation does not prove DNS, certificate trust, Redis ACLs or platform compatibility.
 
 Startup connects to Redis and requires a successful `PING` before listening. Connection setup has a 5-second deadline; commands have a 2-second deadline. A Redis failure or deadline stops the service without automatic reconnect or command replay. A timed-out write may already have executed: investigate before retrying authorization operations.
 
@@ -105,7 +115,7 @@ Each process accepts at most 256 concurrent connections, 32 active business requ
 | `GET /health/ready` | Startup completed and the Redis client is locally ready |
 | `/mcp` | Authenticated Streamable HTTP MCP resource with six Crawl tools |
 
-Use the issuer's Host when probing. Health checks do not query Redis each time and do not prove persistence, Lua permissions, upstream access or platform authorization. An unauthenticated `/mcp` request returns an OAuth challenge; it is not a readiness check.
+Health probes may use the issuer Host or an IP-literal Host. The IP exception applies only to the two exact health paths, never OAuth/MCP. Direct probes omit forwarding headers; proxied probes must pass the normal trusted-peer and HTTPS protocol checks. Health checks do not query Redis each time and do not prove persistence, Lua permissions, upstream access or platform authorization. An unauthenticated `/mcp` request returns an OAuth challenge; it is not a readiness check.
 
 ## Run in a container
 
@@ -117,19 +127,19 @@ docker build --file Dockerfile.remote --tag nstdata-mcp-remote:local .
 
 The image uses Node.js 24.22.2, runs as the nonroot `node` user (UID 1000) by default, and starts `node dist/remote.js` in `/app`. It contains only the compiled Remote application and its production dependencies.
 
-For a local Linux/macOS run, place `remote.json`, `server.crt` and `server.key` in the protected directory below. Set the configuration's TLS paths to `/run/secrets/server.crt` and `/run/secrets/server.key`. Run these commands as the nonroot host user who owns the directory and files; the UID override lets that user read files with mode `0400` or `0600` through the read-only mount.
+For local Linux/macOS runs, put `remote.json` in the protected directory below. Proxy mode needs no certificate files. For direct TLS only, also mount `server.crt` and `server.key` and set their paths to `/run/secrets/server.crt` and `/run/secrets/server.key`. Run the following commands as the non-root host user who owns those files. The UID override permits read-only access to files with mode `0400` or `0600`.
 
 ```sh
 REMOTE_CONFIG_DIR="$HOME/.config/nstdata-mcp-remote"
 docker run --rm --user "$(id -u):$(id -g)" \
   --mount type=bind,src="$REMOTE_CONFIG_DIR",dst=/run/secrets,readonly \
   nstdata-mcp-remote:local --config /run/secrets/remote.json --check
-docker run --rm --user "$(id -u):$(id -g)" --publish 8443:8443 \
+docker run --rm --user "$(id -u):$(id -g)" --publish 127.0.0.1:8080:8080 \
   --mount type=bind,src="$REMOTE_CONFIG_DIR",dst=/run/secrets,readonly \
   nstdata-mcp-remote:local --config /run/secrets/remote.json
 ```
 
-The configuration must listen on `0.0.0.0:8443` for this port mapping, and Redis must be reachable from the container. TLS still terminates in Node. Linux deployments using UID 1000 must deliver secret files readable by that UID through their secret mount, CSI driver or init step, while preserving mode `0400` or `0600` for the configuration and private key.
+This proxy-mode example listens on `0.0.0.0:8080` and publishes only the host loopback port for a local gateway. Configure HTTPS at that gateway, use the actual trusted backend peer range, and ensure Redis is reachable from the container. Adjust port mappings for direct TLS. Linux deployments using UID 1000 must deliver readable files through their Secret mount, CSI driver or initialization step while preserving configuration/private-key modes `0400` or `0600`.
 
 ## Connect and operate
 

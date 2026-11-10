@@ -4,7 +4,7 @@
 
 ## Client setup
 
-Requires Node.js 22 (22.18 or later) or 24, with `npx` on PATH. Get a Crawl API key from the [Nstdata dashboard](https://app.nstdata.io/). Every setup below starts the same local stdio server, pinned to `1.0.2`; no project installation is required.
+Requires Node.js 22 (22.18 or later) or 24, with `npx` on PATH. Get a Crawl API key from the [Nstdata dashboard](https://app.nstdata.io/). The direct configurations below pin the local stdio package; optional marketplace plugins use the release pinned in their manifests. No project installation is required.
 
 Choose one connection per client and preserve other server entries. Keep populated credential files outside version control and restrict access. The server reads environment variables; it does not load `.env` files itself. Client configuration formats and variable-reference syntax differ.
 
@@ -30,7 +30,7 @@ For clients whose configuration uses `mcpServers`, merge this object into the ap
   "mcpServers": {
     "nstdata": {
       "command": "npx",
-      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.2"],
+      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.3"],
       "env": {
         "NSTDATA_MODULES": "crawl",
         "NSTDATA_API_TOKEN": "YOUR_CRAWL_API_TOKEN"
@@ -48,7 +48,7 @@ Register the server in user scope with the [official stdio CLI](https://code.cla
 
 ```sh
 claude mcp add --scope user --env 'NSTDATA_API_TOKEN=${NSTDATA_API_TOKEN:-}' \
-  --transport stdio nstdata -- npx --yes @nstdata-ai/mcp-server@1.0.2
+  --transport stdio nstdata -- npx --yes @nstdata-ai/mcp-server@1.0.3
 ```
 
 If your terminal already receives `NSTDATA_API_TOKEN` from your protected environment or secret manager, run Claude Code from that terminal; the reference resolves when it starts the server. Otherwise, after registration and before connecting, open user `~/.claude.json` and set `mcpServers.nstdata.env.NSTDATA_API_TOKEN` to your real key in that protected file. Keep the existing command and other entries. This avoids putting the real key in shell history. In Claude Code, use `/mcp` to check the connection and tools. Registration alone does not verify startup or credentials.
@@ -63,7 +63,7 @@ For the VS Code configuration format, run **MCP: Open User Configuration** and m
     "nstdata": {
       "type": "stdio",
       "command": "npx",
-      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.2"],
+      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.3"],
       "env": {
         "NSTDATA_MODULES": "crawl",
         "NSTDATA_API_TOKEN": "YOUR_CRAWL_API_TOKEN"
@@ -84,7 +84,7 @@ Merge this entry into `opencode.json` or `opencode.jsonc`. OpenCode uses `mcp`, 
   "mcp": {
     "nstdata": {
       "type": "local",
-      "command": ["npx", "--yes", "@nstdata-ai/mcp-server@1.0.2"],
+      "command": ["npx", "--yes", "@nstdata-ai/mcp-server@1.0.3"],
       "environment": {
         "NSTDATA_MODULES": "crawl",
         "NSTDATA_API_TOKEN": "YOUR_CRAWL_API_TOKEN"
@@ -115,7 +115,7 @@ Use Cursor's marketplace refresh/update controls to receive plugin changes, then
 
 ### Optional Codex plugin
 
-Direct MCP configuration in the [README](../README.md) is sufficient. Choose this alternative if you want Codex marketplace management; it starts the same published server, not another Crawl implementation.
+Direct MCP configuration in the [README](../README.md) is sufficient. Choose this alternative if you want Codex marketplace management; it starts the published stdio package.
 
 1. Add your key to the Codex home `~/.codex/.env` (`%USERPROFILE%\.codex\.env` on Windows, or `.env` under `CODEX_HOME` when set), preserving existing entries:
 
@@ -139,7 +139,7 @@ Update the CLI first if it does not recognize `plugin`; a separately installed C
 
 ### Optional Claude Code plugin
 
-Use Claude Code 2.1.237 or later. This alternative uses Claude Code's plugin configuration and starts the same published MCP server:
+Use Claude Code 2.1.237 or later. This alternative uses Claude Code's plugin configuration and starts the published stdio package:
 
 ```sh
 claude plugin marketplace add nstdata-ai/nstdata-mcp-server

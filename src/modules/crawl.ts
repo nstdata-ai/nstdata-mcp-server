@@ -21,11 +21,17 @@ export function registerCrawlTools(server: McpServer, client: NstDataClient, con
         const bytes = Buffer.from(await client.readStorage(args.ref, options));
         const isText = args.format === 'markdown' || args.format === 'html';
         if (isText && !isUtf8(bytes)) throw new ToolFailure('INVALID_RESPONSE', 'The reference is not valid UTF-8. No text was returned.');
-        const points = isText ? Array.from(bytes.toString('utf8')) : undefined;
-        const total = points?.length ?? bytes.length;
+        let total = bytes.length, text = '';
+        if (isText) {
+            total = 0;
+            for (const point of bytes.toString('utf8')) {
+                if (total >= args.offset && total < args.offset + args.length) text += point;
+                total++;
+            }
+        }
         const end = Math.min(args.offset + args.length, total);
         const output = { format: args.format, encoding: isText ? 'utf-8' : 'base64', unit: isText ? 'codePoints' : 'bytes', offset: args.offset,
-            ...(points ? { text: points.slice(args.offset, end).join('') } : { base64: bytes.subarray(args.offset, end).toString('base64') }),
+            ...(isText ? { text } : { base64: bytes.subarray(args.offset, end).toString('base64') }),
             total, nextOffset: end < total ? end : undefined };
         return { content: [{ type: 'text', text: JSON.stringify(output) }], structuredContent: output };
     }));

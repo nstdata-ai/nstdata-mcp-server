@@ -5,8 +5,27 @@ import { shellCommands, checkMarkdown, clientConfigurations } from '../scripts/d
 import { loadConfig } from '../dist/config.js';
 import { parseEnv } from 'node:util';
 
+const version = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+
 const documents = ['README.md', 'README_zh.md', 'CONTRIBUTING.md', 'CHANGELOG.md', 'SECURITY.md',
-    'docs/mcp.md', 'docs/mcp_zh.md', 'docs/proxy.md', 'docs/proxy_zh.md', 'docs/remote.md', 'docs/remote_zh.md'];
+    'docs/mcp.md', 'docs/mcp_zh.md', 'docs/proxy.md', 'docs/proxy_zh.md', 'docs/remote.md', 'docs/remote_zh.md',
+    'plugins/nstdata/README.md', 'plugins/nstdata/README_zh.md'];
+
+test('the standalone plugin includes its own installation guide and MIT license', () => {
+    const directory = new URL('../plugins/nstdata/', import.meta.url);
+    const readme = fs.readFileSync(new URL('README.md', directory), 'utf8');
+    const chinese = fs.readFileSync(new URL('README_zh.md', directory), 'utf8');
+    const versions = ['.codex-plugin', '.cursor-plugin', '.claude-plugin'].map(name =>
+        JSON.parse(fs.readFileSync(new URL(`${name}/plugin.json`, directory), 'utf8')).version);
+    assert.equal(new Set(versions).size, 1, 'Native plugins must select the same server release');
+    for (const text of [readme, chinese]) assert.ok(text.includes(`@nstdata-ai/mcp-server@${versions[0]}`));
+    assert.ok(readme.replace(/```[\s\S]*?```/g, '').trim().split(/\s+/).length >= 40);
+    assert.match(readme, /\[中文\]\(README_zh\.md\)/);
+    assert.match(readme, /\[MIT license\]\(LICENSE\)/);
+    assert.match(chinese, /\[MIT 许可\]\(LICENSE\)/);
+    assert.equal(fs.readFileSync(new URL('LICENSE', directory), 'utf8'),
+        fs.readFileSync(new URL('../LICENSE', import.meta.url), 'utf8'));
+});
 
 test('Cursor marketplace resolves its own plugin and credential configuration', () => {
     const read = file => JSON.parse(fs.readFileSync(new URL('../' + file, import.meta.url), 'utf8'));
@@ -96,14 +115,14 @@ test('bilingual client setup preserves the pinned command, credential mapping an
         assert.equal(clients.length, 3);
         for (const config of clients) {
             assert.deepEqual(config, {
-                command: 'npx', args: ['--yes', '@nstdata-ai/mcp-server@1.0.2'],
+                command: 'npx', args: ['--yes', `@nstdata-ai/mcp-server@${version}`],
                 env: { NSTDATA_MODULES: 'crawl', NSTDATA_API_TOKEN: 'YOUR_CRAWL_API_TOKEN' },
             });
             assert.equal(loadConfig(config.env).modules, 'crawl');
         }
         assert.deepEqual(shellCommands(text), [
             ['claude', 'mcp', 'add', '--scope', 'user', '--env', 'NSTDATA_API_TOKEN=${NSTDATA_API_TOKEN:-}',
-                '--transport', 'stdio', 'nstdata', '--', 'npx', '--yes', '@nstdata-ai/mcp-server@1.0.2'],
+                '--transport', 'stdio', 'nstdata', '--', 'npx', '--yes', `@nstdata-ai/mcp-server@${version}`],
             ['codex', 'plugin', 'marketplace', 'upgrade', 'nstdata'],
             ['codex', 'plugin', 'add', 'nstdata@nstdata'],
             ['claude', 'plugin', 'marketplace', 'add', 'nstdata-ai/nstdata-mcp-server'],
