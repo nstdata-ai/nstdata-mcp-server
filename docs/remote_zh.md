@@ -141,6 +141,28 @@ docker run --rm --user "$(id -u):$(id -g)" --publish 127.0.0.1:8080:8080 \
 
 此代理模式示例监听 `0.0.0.0:8080`，仅将宿主回环端口暴露给本机网关；网关还需配置HTTPS及实际可信对端范围，容器内需能访问Redis。应用TLS模式应按配置调整端口映射。以 UID 1000 运行的 Linux 部署需通过其 Secret 挂载、CSI driver 或 init 步骤交付该 UID 可读的文件，同时保持配置和私钥权限为 `0400` 或 `0600`。
 
+## 发布镜像
+
+维护者可使用 `Publish Remote image`（`.github/workflows/release-image.yml`）将 Linux AMD64 镜像发布到已有镜像仓库。该流程独立于 npm 发布，不部署服务。
+
+1. 创建镜像仓库，为专用凭据授予仅限该仓库的推送权限，确认 GitHub 托管 runner 可以访问。若下载镜像需要认证，保持镜像仓库为私有。
+2. 在 GitHub 仓库 **Settings → Environments** 配置 `container-production`：要求审核人、禁止管理员绕过，并在 **Selected branches and tags** 中仅允许 `main` 分支。若操作者同时负责批准，保持 **Prevent self-review** 关闭。
+3. 在该环境中添加以下配置：
+
+| 类型 | 名称 | 值 |
+|---|---|---|
+| Variable | `MCP_IMAGE_REPOSITORY` | 镜像仓库域名、命名空间及仓库名，不含 URL 协议、tag 或 digest |
+| Secret | `MCP_REGISTRY_USERNAME` | 专用镜像仓库用户名 |
+| Secret | `MCP_REGISTRY_PASSWORD` | 专用镜像仓库密码或推送 Token |
+
+仓库地址、源码提交、tag 和 digest 可能出现在公开构建日志及摘要中，Variable 不用于保密。若镜像地址也必须保密，使用现有私有构建设施，不运行此公开工作流。运行配置、Nstdata API Key、Redis／OAuth 凭据及集群访问凭据不放入工作流或镜像。
+
+4. 合并已审核源码、确认检查通过后，打开 **Actions → Publish Remote image → Run workflow**，选择 `main`，填写对应的完整 40 位审核提交 SHA。输入必须与工作流提交一致，否则停止发布。
+5. 检查通过后批准 `container-production` job。批准发生在该 job 启动前。它构建并加载一份 AMD64 镜像，验证文件、依赖及生命周期后，才登录并推送同一份已检查镜像，推送只执行一次。登录 action 在 job 清理阶段退出登录。
+6. 将摘要中的 `repository@sha256:…` 引用用于部署配置。`sha-<commit>-amd64` tag 标识源码；除非镜像仓库启用不可变策略，否则 tag 仍可被覆盖。本流程不写入 `latest`。公开可用性及生产部署单独验收。
+
+推送失败或被中断时，先核对镜像仓库，再决定是否重新触发。推送成功但 digest 记录失败时，镜像可能已经发布，不要为补取 digest 重复发布。工作流不在验证后重新构建，不重试发布或轮询公开可见性；无需 npm Token、Kubernetes 凭据或部署权限。
+
 ## 平台接入与运维
 
 在目标平台填写部署后的 `/mcp` URL 及匹配的固定客户端凭据。使用服务公布的 OAuth discovery metadata，不猜测授权／令牌路径。请求 `crawl:use`，访问续期受已授予的授权约束。开放普通用户访问前，需在实际平台验证授权、工具发现及一次有界调用。

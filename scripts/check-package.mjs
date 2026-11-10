@@ -194,7 +194,7 @@ try {
         assert.equal(result.structuredContent.observedIp, '203.0.113.9');
         assert.equal(h.stderr(), '');
     }
-    const installedTests = fs.readdirSync(path.join(root, 'test')).filter(name => name.endsWith('.test.mjs') && !['documentation.test.mjs', 'runtime-package-check.test.mjs', 'release.test.mjs', 'startup.test.mjs'].includes(name)).sort()
+    const installedTests = fs.readdirSync(path.join(root, 'test')).filter(name => name.endsWith('.test.mjs') && !['documentation.test.mjs', 'runtime-package-check.test.mjs', 'release.test.mjs', 'release-image.test.mjs', 'startup.test.mjs'].includes(name)).sort()
         .map(name => path.join(root, 'test', name));
     execFileSync(process.execPath, ['--test', ...installedTests], { cwd: temp,
         env: { ...cleanEnvironment, NSTDATA_TEST_CLI: installedCli }, timeout: 60000, stdio: 'inherit' });
