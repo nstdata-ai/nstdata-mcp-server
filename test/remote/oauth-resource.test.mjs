@@ -178,6 +178,7 @@ test('official SDK enforces expiry, resource and scope while invalid live bindin
         ['missing-expiry', verified('A', { expiresAt: undefined }), 401, 'invalid_token'],
         ['missing-resource', verified('A', { resource: undefined }), 401, 'invalid_token'],
         ['wrong-resource', verified('A', { resource: new URL('https://another.fixture.test/crawl') }), 401, 'invalid_token'],
+        ['previous-resource-path', verified('A', { resource: new URL('https://mcp.fixture.test/mcp') }), 401, 'invalid_token'],
         ['missing-scope', verified('A', { scopes: [] }), 403, 'insufficient_scope'],
         ['unknown-token', null, 401, 'invalid_token'], ['revoked-grant', null, 401, 'invalid_token'],
         ['revoked-binding', null, 401, 'invalid_token'], ['old-binding-version', null, 401, 'invalid_token'],

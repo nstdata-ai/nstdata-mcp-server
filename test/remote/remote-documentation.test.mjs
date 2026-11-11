@@ -11,16 +11,21 @@ const executable = pathToFileURL(remoteCli);
 const docs = process.env.NSTDATA_REMOTE_TEST_CLI ? new URL('../docs/', executable) : new URL('../../docs/', import.meta.url);
 const { loadRemoteConfig } = await import(new URL('./remote-config.js', executable));
 
-test('both operator guides generate a valid protected configuration without overwriting secrets', async t => {
+test('operator guides generate protected configurations and validate default and custom MCP paths', async t => {
     const directory = fs.mkdtempSync(path.join(tmpdir(), 'mcp-remote-docs-'));
     t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+    const pathExamples = [];
     const sources = ['remote.md', 'remote_zh.md'].map(name => {
         const text = fs.readFileSync(new URL(name, docs), 'utf8');
         const examples = [...text.matchAll(/```js\n([\s\S]*?)```/g)];
         assert.equal(examples.length, 1);
+        const paths = [...text.matchAll(/```json\n([\s\S]*?)```/g)];
+        assert.equal(paths.length, 1);
+        pathExamples.push(JSON.parse(paths[0][1]));
         return examples[0][1];
     });
     assert.equal(sources[0], sources[1]);
+    for (const example of pathExamples) assert.deepEqual(example, { mcpPath: '/crawl' });
     const script = path.join(directory, 'create-remote-config.mjs');
     fs.writeFileSync(script, sources[0]);
     const configs = [];
@@ -33,6 +38,7 @@ test('both operator guides generate a valid protected configuration without over
         assert.equal(result.stdout, 'Remote configuration created.\n');
         const config = await loadRemoteConfig(filename);
         assert.equal(config.issuerUrl, 'https://mcp.example.com');
+        assert.equal(config.mcpPath, '/mcp');
         assert.deepEqual(config.trustedProxyCidrs, ['192.0.2.0/24']);
         assert.equal(config.listen.tls, undefined);
         assert.equal(config.encryptionKeys['encryption-1'].byteLength, 32);
@@ -44,15 +50,21 @@ test('both operator guides generate a valid protected configuration without over
         assert.deepEqual(fs.readFileSync(filename), original);
         configs.push(JSON.parse(original.toString('utf8')));
         // The same generated configuration is checked by the real CLI in loopback development mode.
-        const local = { ...configs[index], issuerUrl: 'http://127.0.0.1:45893',
-            listen: { host: '127.0.0.1', port: 45893 },
-            redis: { socketPath: path.join(directory, 'not-connected.sock'), namespace: 'docs_fixture' } };
-        delete local.trustedProxyCidrs;
-        fs.writeFileSync(filename, JSON.stringify(local));
-        const checked = spawnSync(process.execPath, [fileURLToPath(new URL('./remote.js', executable)), '--config', filename, '--check'],
-            { encoding: 'utf8', timeout: 5000, env: { NODE_OPTIONS: process.env.NODE_OPTIONS } });
-        assert.equal(checked.status, 0, checked.stderr); assert.equal(checked.stderr, '');
-        assert.match(checked.stdout, /No connection was attempted/);
+        for (const endpoint of [{}, pathExamples[index]]) {
+            const local = { ...configs[index], ...endpoint, issuerUrl: 'http://127.0.0.1:45893',
+                listen: { host: '127.0.0.1', port: 45893 },
+                redis: { socketPath: path.join(directory, 'not-connected.sock'), namespace: 'docs_fixture' } };
+            delete local.trustedProxyCidrs;
+            const candidate = Buffer.from(JSON.stringify(local));
+            fs.writeFileSync(filename, candidate);
+            const loaded = await loadRemoteConfig(filename);
+            assert.equal(loaded.mcpPath, endpoint.mcpPath ?? '/mcp');
+            const checked = spawnSync(process.execPath, [fileURLToPath(new URL('./remote.js', executable)), '--config', filename, '--check'],
+                { encoding: 'utf8', timeout: 5000, env: { NODE_OPTIONS: process.env.NODE_OPTIONS } });
+            assert.equal(checked.status, 0, checked.stderr); assert.equal(checked.stderr, '');
+            assert.match(checked.stdout, /No connection was attempted/);
+            assert.deepEqual(fs.readFileSync(filename), candidate);
+        }
     }
     for (const field of ['cookieKeys', 'jwks', 'encryptionKeys', 'fingerprintKey']) assert.notDeepEqual(configs[0][field], configs[1][field]);
 });

@@ -5,6 +5,7 @@
 ### Self-hosted Remote application
 
 - Add a separate Remote MCP application and container build, keeping OAuth and Redis dependencies and runtime output outside the stdio npm package.
+- Allow a configured Remote MCP endpoint such as `/crawl`, retaining `/mcp` as the default and binding OAuth discovery and tokens to the selected resource.
 
 ## 1.0.3
 

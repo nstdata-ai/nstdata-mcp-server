@@ -1,6 +1,18 @@
 import type { IncomingMessage } from 'node:http';
 import { BlockList, isIP } from 'node:net';
 
+const reservedMcpPaths = new Set(['/auth', '/backchannel', '/device', '/session', '/token', '/jwks',
+    '/request', '/reg', '/me', '/oauth', '/health']);
+
+/** Keep the configured endpoint distinct from authorization, discovery and health routes. */
+export function mcpEndpointPath(value: unknown = '/mcp'): string {
+    if (typeof value !== 'string' || value.length > 128 ||
+        !/^\/[a-z](?:[a-z0-9-]*[a-z0-9])?$/.test(value) || reservedMcpPaths.has(value)) {
+        throw new Error('Invalid Remote MCP path');
+    }
+    return value;
+}
+
 /** Restrict trust to the direct proxy peer, never addresses claimed in forwarded headers. */
 export function trustedProxyPeers(cidrs: readonly string[] | undefined): BlockList | undefined {
     if (cidrs === undefined) return undefined;

@@ -68,8 +68,10 @@ test('container fixtures remain private synthetic loopback files and generated p
     const runtime = JSON.parse(fs.readFileSync(path.join(directory, 'runtime.json'), 'utf8'));
     assert.equal(check.issuerUrl, 'http://127.0.0.1:45891');
     assert.equal(check.redis.socketPath, '/review/absent.sock');
+    assert.equal(check.mcpPath, undefined);
     assert.equal(runtime.redis.url, 'redis://127.0.0.1:45892/0');
     assert.equal(runtime.listen.host, '127.0.0.1');
+    assert.equal(runtime.mcpPath, '/crawl');
     for (const name of ['probe.mjs', 'no-network.cjs', 'loopback.cjs']) {
         execFileSync(process.execPath, ['--check', path.join(directory, name)], { timeout: 5000,
             env: { PATH: process.env.PATH }, stdio: ['ignore', 'pipe', 'pipe'] });

@@ -5,7 +5,7 @@ import { createOAuthProvider, type OAuthProviderOptions } from './oauth-provider
 import { createOAuthHttpHandler } from './oauth-resource.js';
 import type { HttpHandlerOptions } from './http-handler.js';
 import { createRedisAdapterFactory } from './redis/provider-adapter.js';
-import { createRemoteRequestPolicy } from './remote-request.js';
+import { createRemoteRequestPolicy, mcpEndpointPath } from './remote-request.js';
 
 export interface RemoteHandlerOptions extends OAuthProviderOptions {
     trustedProxyCidrs?: readonly string[];
@@ -77,8 +77,9 @@ export function createRemoteHandler(options: RemoteHandlerOptions): RemoteHandle
 function configureRemoteHandler(options: RemoteHandlerOptions): RemoteHandler {
     const issuer = new URL(options.issuerUrl);
     const resource = new URL(options.resourceUrl);
-    if (issuer.pathname !== '/' || issuer.origin !== resource.origin || resource.pathname !== '/mcp' ||
+    if (issuer.pathname !== '/' || issuer.origin !== resource.origin || resource.href !== options.resourceUrl ||
         typeof options.verifyApiKey !== 'function') throw new Error('Invalid Remote configuration');
+    mcpEndpointPath(resource.pathname);
     const maxBody = limit(options.maxRequestBodyBytes ?? 1_048_576, 16_777_216);
     const maxForm = limit(options.maxFormBodyBytes ?? 32_768, maxBody);
     const timeout = limit(options.requestTimeoutMs ?? 130_000, 2_147_483_647);

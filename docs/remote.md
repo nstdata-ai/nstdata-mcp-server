@@ -83,7 +83,8 @@ The program refuses to overwrite existing files and never prints secrets. `192.0
 
 | Field | Configuration rule |
 |---|---|
-| `issuerUrl` | HTTPS origin without a path; the MCP resource is this origin plus `/mcp` |
+| `issuerUrl` | HTTPS origin without a path; the MCP resource is this origin plus `mcpPath` |
+| `mcpPath` | Optional MCP endpoint path; defaults to `/mcp`. Set `/crawl` for a Crawl-specific endpoint |
 | `listen` | Numeric IP and port `1–65535`; HTTP behind a proxy, or `tls.certFile` and `tls.keyFile` for direct TLS |
 | `trustedProxyCidrs` | Required immediate-peer IP/CIDR allowlist for proxy mode; mutually exclusive with `listen.tls` |
 | `redis` | Exactly one `url` or absolute `socketPath`, plus a distinct namespace per environment |
@@ -93,6 +94,20 @@ The program refuses to overwrite existing files and never prints secrets. `192.0
 | `encryptionKeys`, `currentKeyId` | Named 32-byte base64url keys and the current encryption key's ID |
 | `fingerprintKey` | Independent stable 32-byte base64url key; changing it requires a new namespace |
 | `allowedOrigins` | Optional exact browser origins; no wildcards. Non-browser requests may omit Origin |
+
+To use `https://mcp.example.com/crawl`, add this property to the existing configuration; it is not a complete configuration file:
+
+```json
+{
+  "mcpPath": "/crawl"
+}
+```
+
+`mcpPath` must start with `/` and contain one segment, at most 128 characters in total. The segment starts with a lowercase ASCII letter, contains only lowercase letters, digits or hyphens, and ends with a letter or digit. Authentication paths such as `/auth`, `/oauth` and `/token`, along with health and discovery paths, are reserved.
+
+Keep `issuerUrl` as `https://mcp.example.com`. The resource metadata is then served at `https://mcp.example.com/.well-known/oauth-protected-resource/crawl`; authorization-server discovery remains at `https://mcp.example.com/.well-known/oauth-authorization-server`. Route the advertised discovery and OAuth endpoints through the gateway as well as the MCP path. Health paths stay unchanged.
+
+Changing `mcpPath` changes the OAuth resource identifier. Update the client URL and reconnect to authorize the new resource; existing tokens are not interchangeable between paths. The service exposes one configured MCP path without an automatic `/mcp` alias or redirect. Use a matching application/image and configuration: older versions reject the `mcpPath` field. Preserve the existing keys and Redis namespace when changing the path.
 
 For loopback development only, an HTTP issuer can use literal `127.0.0.1` or `[::1]`, with the same loopback listen address and port and neither TLS nor trusted proxy configuration. Plain `redis:` URLs are also restricted to literal loopback addresses. Do not expose that configuration publicly.
 
@@ -113,9 +128,9 @@ Each process accepts at most 256 concurrent connections, 32 active business requ
 |---|---|
 | `GET /health/live` | Process is serving requests |
 | `GET /health/ready` | Startup completed and the Redis client is locally ready |
-| `/mcp` | Authenticated Streamable HTTP MCP resource with six Crawl tools |
+| `mcpPath` (default `/mcp`) | Authenticated Streamable HTTP MCP resource with six Crawl tools |
 
-Health probes may use the issuer Host or an IP-literal Host. The IP exception applies only to the two exact health paths, never OAuth/MCP. Direct probes omit forwarding headers; proxied probes must pass the normal trusted-peer and HTTPS protocol checks. Health checks do not query Redis each time and do not prove persistence, Lua permissions, upstream access or platform authorization. An unauthenticated `/mcp` request returns an OAuth challenge; it is not a readiness check.
+Health probes may use the issuer Host or an IP-literal Host. The IP exception applies only to the two exact health paths, never OAuth/MCP. Direct probes omit forwarding headers; proxied probes must pass the normal trusted-peer and HTTPS protocol checks. Health checks do not query Redis each time and do not prove persistence, Lua permissions, upstream access or platform authorization. An unauthenticated request to the configured MCP path returns an OAuth challenge; it is not a readiness check.
 
 ## Run in a container
 
@@ -165,7 +180,7 @@ If push fails or is interrupted, inspect the registry before another dispatch. I
 
 ## Connect and operate
 
-Configure the target platform with the deployed `/mcp` URL and its matching fixed client credentials. Use advertised OAuth discovery metadata rather than inventing authorization/token paths. Request `crawl:use`; access renewal remains subject to the granted authorization. Verify the actual platform's authorization, tool discovery and a bounded request before opening general access.
+Configure the target platform with the deployed MCP URL (`issuerUrl` plus `mcpPath`, `/mcp` by default) and its matching fixed client credentials. Use advertised OAuth discovery metadata rather than inventing authorization/token paths. Request `crawl:use`; access renewal remains subject to the granted authorization. Verify the actual platform's authorization, tool discovery and a bounded request before opening general access.
 
 Keep Redis backups and all signing, cookie, encryption and fingerprint secrets under the deployment owner's control. During rotation, retain previous signing/cookie/encryption keys until their dependent sessions, tokens or bindings have expired. Test recovery from the same Redis data and key set. Readiness alone is not a backup or recovery test.
 

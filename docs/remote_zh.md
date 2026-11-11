@@ -83,7 +83,8 @@ node create-remote-config.mjs /absolute/path/remote.json
 
 | 字段 | 配置规则 |
 |---|---|
-| `issuerUrl` | 不含路径的 HTTPS origin；MCP resource 为该 origin 加 `/mcp` |
+| `issuerUrl` | 不含路径的 HTTPS origin；MCP resource 为该 origin 加 `mcpPath` |
+| `mcpPath` | 可选的 MCP 端点路径；默认为 `/mcp`，设为 `/crawl` 可提供 Crawl 专用入口 |
 | `listen` | 数字 IP 和 `1–65535` 端口；代理模式监听 HTTP，直 TLS 模式还需 `tls.certFile`、`tls.keyFile` |
 | `trustedProxyCidrs` | 代理模式必填的直接对端 IP／CIDR；与 `listen.tls` 互斥 |
 | `redis` | `url` 或绝对 `socketPath` 二选一；不同环境使用独立 namespace |
@@ -93,6 +94,20 @@ node create-remote-config.mjs /absolute/path/remote.json
 | `encryptionKeys`、`currentKeyId` | 带 ID 的 32 字节 base64url 加密密钥及当前密钥 ID |
 | `fingerprintKey` | 独立、稳定的 32 字节 base64url 密钥；变更需新建 namespace |
 | `allowedOrigins` | 可选的精确浏览器 origin，不支持通配符；非浏览器请求可不带 Origin |
+
+要使用 `https://mcp.example.com/crawl`，在现有配置中添加下列字段；这不是完整配置文件：
+
+```json
+{
+  "mcpPath": "/crawl"
+}
+```
+
+`mcpPath` 必须以 `/` 开头且只包含一个路径段，总长最多 128 个字符。路径段以小写 ASCII 字母开头，仅含小写字母、数字或连字符，以字母或数字结尾。`/auth`、`/oauth`、`/token` 等认证路径，以及健康检查和发现路径均为保留路径。
+
+`issuerUrl` 保持为 `https://mcp.example.com`。资源发现地址为 `https://mcp.example.com/.well-known/oauth-protected-resource/crawl`，授权服务器发现地址仍为 `https://mcp.example.com/.well-known/oauth-authorization-server`。网关除转发 MCP 路径外，还需转发发现文档公布的认证相关端点；健康检查路径保持不变。
+
+修改 `mcpPath` 会改变 OAuth 资源标识。客户端需更新地址并重新连接授权，不能跨路径复用原令牌。服务只提供一个配置的 MCP 路径，不自动添加 `/mcp` 别名或重定向。应用／镜像与配置需配套更新，旧版本会拒绝 `mcpPath` 字段。修改路径时保留已有密钥和 Redis namespace。
 
 仅在本机开发时，HTTP issuer 可以使用字面量 `127.0.0.1` 或 `[::1]`，监听同一个回环地址和端口且不提供 TLS 或可信代理配置。明文 `redis:` URL 也仅允许字面量回环地址。不要将该配置暴露到公网。
 
@@ -113,9 +128,9 @@ node remote/dist/remote.js --config /absolute/path/remote.json
 |---|---|
 | `GET /health/live` | 进程正在提供请求处理 |
 | `GET /health/ready` | 启动已完成，Redis 客户端在本机处于 ready 状态 |
-| `/mcp` | 需要认证的 Streamable HTTP MCP resource，提供六个 Crawl 工具 |
+| `mcpPath`（默认 `/mcp`） | 需要认证的 Streamable HTTP MCP resource，提供六个 Crawl 工具 |
 
-健康探测使用issuer对应的Host或字面量IP Host；IP例外仅适用于两个精确健康路径，不授权OAuth／MCP请求。直接探测不带转发头；经代理探测需通过完整的可信对端／HTTPS协议校验。健康检查不会每次查询 Redis，也不证明持久化、Lua 权限、上游可用性或平台授权。未认证的 `/mcp` 请求返回 OAuth challenge，不能将它作为 readiness 检查。
+健康探测使用issuer对应的Host或字面量IP Host；IP例外仅适用于两个精确健康路径，不授权OAuth／MCP请求。直接探测不带转发头；经代理探测需通过完整的可信对端／HTTPS协议校验。健康检查不会每次查询 Redis，也不证明持久化、Lua 权限、上游可用性或平台授权。未认证的 MCP 路径请求返回 OAuth challenge，不能将它作为 readiness 检查。
 
 ## 容器运行
 
@@ -165,7 +180,7 @@ docker run --rm --user "$(id -u):$(id -g)" --publish 127.0.0.1:8080:8080 \
 
 ## 平台接入与运维
 
-在目标平台填写部署后的 `/mcp` URL 及匹配的固定客户端凭据。使用服务公布的 OAuth discovery metadata，不猜测授权／令牌路径。请求 `crawl:use`，访问续期受已授予的授权约束。开放普通用户访问前，需在实际平台验证授权、工具发现及一次有界调用。
+在目标平台填写部署后的 MCP URL（`issuerUrl` 加 `mcpPath`，默认路径为 `/mcp`）及匹配的固定客户端凭据。使用服务公布的 OAuth discovery metadata，不猜测授权／令牌路径。请求 `crawl:use`，访问续期受已授予的授权约束。开放普通用户访问前，需在实际平台验证授权、工具发现及一次有界调用。
 
 Redis 备份及签名、Cookie、加密、指纹机密由部署负责人保管。轮换时，保留旧签名／Cookie／加密密钥，直至依赖它们的会话、令牌或绑定过期。使用同一份 Redis 数据与密钥集合验证恢复；readiness 不替代备份／恢复测试。
 
