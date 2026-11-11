@@ -281,17 +281,30 @@ for (const mcpPath of ['/mcp', '/crawl']) test(`actual Remote consent, OAuth and
         extraHosts.push(host);
         await new Promise(resolve => host.server.listen(0, '127.0.0.1', resolve));
         const nativeOrigin = `http://127.0.0.1:${host.server.address().port}`; origins.push(nativeOrigin);
-        let nativeCommands = 0;
-        const nativeStore = { ...store, namespace: `${store.namespace}_native`, command: args => { nativeCommands++; return redis.command(args); } };
+        let nativeCommands = 0, delayNextRecoveryCommand = false;
+        const nativeStore = { ...store, namespace: `${store.namespace}_native`, command: async args => {
+            nativeCommands++;
+            if (delayNextRecoveryCommand) {
+                delayNextRecoveryCommand = false;
+                // Normal refresh storage may take longer than the interrupted request's deadline.
+                await delay(200);
+            }
+            return redis.command(args);
+        } };
         const nativeActualCredentials = createRedisCredentialStore({ ...nativeStore, encryptionKeys: { fixture: randomBytes(32) }, currentKeyId: 'fixture', fingerprintKey: randomBytes(32) });
         const nativeCredentials = { ...nativeActualCredentials, async authorize(token) { const binding = await nativeActualCredentials.authorize(token); authorizations.push(binding); return binding; } };
         const nativeClient = { ...clients[0], redirectUris: [`${nativeOrigin}/callback/A`] };
-        host.application = createRemoteHandler({ ...handlerOptions, issuerUrl: nativeOrigin, resourceUrl: `${nativeOrigin}${mcpPath}`, clients: [nativeClient], store: nativeStore, credentials: nativeCredentials, allowedOrigins: [nativeOrigin], requestTimeoutMs: 150 });
+        const nativeOptions = { ...handlerOptions, issuerUrl: nativeOrigin, resourceUrl: `${nativeOrigin}${mcpPath}`, clients: [nativeClient], store: nativeStore, credentials: nativeCredentials, allowedOrigins: [nativeOrigin] };
+        const recoveryApplication = createRemoteHandler(nativeOptions);
+        const boundedApplication = createRemoteHandler({ ...nativeOptions, requestTimeoutMs: 150 });
+        t.after(async () => { await boundedApplication.close(); await recoveryApplication.close(); });
+        host.application = recoveryApplication;
         const nativeMetadata = await (await fetch(`${nativeOrigin}/.well-known/openid-configuration`)).json();
         const target = { origin: nativeOrigin, resource: `${nativeOrigin}${mcpPath}`, metadata: nativeMetadata };
         const granted = await authorize('A', nativeClient, undefined, undefined, target);
         let token = granted.token;
         for (const mode of ['oversize', 'timeout', 'disconnect', 'close']) {
+            host.application = boundedApplication;
             const before = nativeCommands, body = new URLSearchParams({ grant_type: 'refresh_token', refresh_token: token.refresh_token, resource: target.resource }).toString();
             const received = new Promise(resolve => host.server.once('request', resolve));
             let finished;
@@ -307,10 +320,13 @@ for (const mcpPath of ['/mcp', '/crawl']) test(`actual Remote consent, OAuth and
             request.end(body.slice(body.length / 2), () => {});
             await delay(25);
             assert.equal(nativeCommands, before, `${mode} must never dispatch provider storage after an incomplete/oversized body`);
+            host.application = recoveryApplication;
             if (mode !== 'close') {
+                delayNextRecoveryCommand = mode === 'timeout';
                 const refreshedResponse = await fetch(nativeMetadata.token_endpoint, { method: 'POST', headers: { authorization: 'Basic ' + Buffer.from(`${nativeClient.clientId}:${nativeClient.clientSecret}`).toString('base64'), 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: token.refresh_token, resource: target.resource }) });
                 const refreshed = await refreshedResponse.json();
-                assert(refreshedResponse.status === 200 && refreshed.refresh_token && refreshed.refresh_token !== token.refresh_token, `${mode} must leave the original refresh token usable`); token = refreshed;
+                assert.equal(refreshedResponse.status, 200, `${mode} recovery failed (${refreshed.error ?? 'no OAuth error'})`);
+                assert(refreshed.refresh_token && refreshed.refresh_token !== token.refresh_token, `${mode} must return a rotated refresh token`); token = refreshed;
             }
         }
     });
