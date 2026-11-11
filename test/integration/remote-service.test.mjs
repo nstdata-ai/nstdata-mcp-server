@@ -397,7 +397,7 @@ globalThis.fetch=async()=>{process.exitCode=91;throw new Error('Upstream request
 });
 
 
-for (const tlsTermination of ['trusted CIDR', 'ingress']) test(`HTTPS gateway to HTTP Remote preserves OAuth, secure cookies and authenticated MCP (${tlsTermination})`, { timeout: 20000 }, async t => {
+for (const tlsTermination of ['trusted CIDR', 'ingress']) for (const mcpPath of ['/mcp', '/crawl']) test(`HTTPS gateway to HTTP Remote preserves OAuth, secure cookies and authenticated MCP (${tlsTermination}, ${mcpPath})`, { timeout: 20000 }, async t => {
     const origins = [], syntheticKey = 'synthetic-proxy-upstream-key';
     let userLookups = 0, crawlCalls = 0, service, gateway, client;
     const redis = await isolatedRedis(t, { allowedOrigins: () => origins, virtualFetch: async (input, url) => {
@@ -438,6 +438,7 @@ for (const tlsTermination of ['trusted CIDR', 'ingress']) test(`HTTPS gateway to
     });
     const options = config(backendPort, redis.socketPath);
     options.issuerUrl = origin;
+    options.mcpPath = mcpPath;
     if (tlsTermination === 'ingress') options.tlsTermination = 'ingress';
     else options.trustedProxyCidrs = ['127.0.0.1/32'];
     options.clients[0].redirectUris = [origin + '/callback'];
@@ -448,7 +449,7 @@ for (const tlsTermination of ['trusted CIDR', 'ingress']) test(`HTTPS gateway to
         assert.equal((await request(backend + endpoint, { headers })).status, 200, 'kubelet fixed Host is accepted without proxy headers');
         assert.equal((await request(origin + endpoint, { ca })).status, 200, 'gateway health passes the normal proxy boundary');
     }
-    for (const endpoint of ['/mcp', '/.well-known/openid-configuration', '/health/ready/extra']) {
+    for (const endpoint of [mcpPath, '/.well-known/openid-configuration', '/health/ready/extra']) {
         assert.equal((await request(backend + endpoint, { headers })).status, 400);
         assert.equal((await request(backend + endpoint)).status, 400);
     }
@@ -466,7 +467,7 @@ for (const tlsTermination of ['trusted CIDR', 'ingress']) test(`HTTPS gateway to
         } finally { await deniedService.close(); }
     }
     for (const duplicate of [['X-Forwarded-Proto', 'https'], ['Host', new URL(origin).host]]) {
-        assert.equal((await request(backend + '/mcp', { headers: ['Host', new URL(origin).host, 'X-Forwarded-Proto', 'https', ...duplicate] })).status, 400);
+        assert.equal((await request(backend + mcpPath, { headers: ['Host', new URL(origin).host, 'X-Forwarded-Proto', 'https', ...duplicate] })).status, 400);
     }
     const cookies = new Map(), secureCookies = [];
     async function browser(url, settings = {}) {
@@ -483,17 +484,34 @@ for (const tlsTermination of ['trusted CIDR', 'ingress']) test(`HTTPS gateway to
         assert(!response.body.includes(syntheticKey) && !String(response.headers.location).includes(syntheticKey));
         return response;
     }
-    const metadata = JSON.parse((await browser(origin + '/.well-known/openid-configuration')).body);
+    const metadataResponse = await browser(origin + '/.well-known/oauth-authorization-server');
+    assert.equal(metadataResponse.status, 200);
+    const metadata = JSON.parse(metadataResponse.body);
+    const nativeResponse = await browser(origin + '/.well-known/openid-configuration');
+    assert.equal(nativeResponse.status, 200);
+    const nativeMetadata = JSON.parse(nativeResponse.body);
+    for (const [field, value] of Object.entries(metadata)) assert.deepEqual(nativeMetadata[field], value, field);
     assert.equal(metadata.issuer, origin);
+    assert.deepEqual(metadata.scopes_supported, ['crawl:use', 'offline_access']);
+    assert.equal(metadata.authorization_response_iss_parameter_supported, true);
     assert(Object.entries(metadata).filter(([name]) => name.endsWith('_endpoint')).every(([, value]) => value.startsWith(origin + '/')));
-    const challenge = await browser(origin + '/mcp');
+    const challenge = await browser(origin + mcpPath);
     assert.equal(challenge.status, 401); assert(challenge.headers['www-authenticate'].includes(origin));
-    const verifier = randomBytes(32).toString('base64url'), resource = origin + '/mcp';
-    let response = await browser(metadata.authorization_endpoint + '?' + new URLSearchParams({
+    const verifier = randomBytes(32).toString('base64url'), resource = origin + mcpPath;
+    const authorizationRequest = {
         client_id: options.clients[0].clientId, redirect_uri: options.clients[0].redirectUris[0], response_type: 'code',
-        scope: 'crawl:use', resource, state: 'proxy-fixture-state', code_challenge_method: 'S256',
+        scope: metadata.scopes_supported.join(' '), resource, state: 'proxy-fixture-state', code_challenge_method: 'S256',
         code_challenge: createHash('sha256').update(verifier).digest('base64url'),
-    }));
+    };
+    const denied = await browser(metadata.authorization_endpoint + '?' + new URLSearchParams({ ...authorizationRequest, scope: 'openid crawl:use' }));
+    assert.equal(denied.status, 303);
+    const deniedDestination = new URL(denied.headers.location);
+    assert.equal(deniedDestination.origin + deniedDestination.pathname, options.clients[0].redirectUris[0]);
+    assert.equal(deniedDestination.searchParams.get('error'), 'invalid_scope');
+    assert.equal(deniedDestination.searchParams.get('iss'), metadata.issuer);
+    assert.equal(deniedDestination.searchParams.get('state'), authorizationRequest.state);
+    assert.equal(userLookups, 0, 'unsupported scopes are rejected before upstream authentication');
+    let response = await browser(metadata.authorization_endpoint + '?' + new URLSearchParams(authorizationRequest));
     assert.equal(response.status, 303);
     const interaction = new URL(response.headers.location, origin);
     assert.equal(interaction.origin, origin);
@@ -506,7 +524,11 @@ for (const tlsTermination of ['trusted CIDR', 'ingress']) test(`HTTPS gateway to
     for (let count = 0; count < 6; count++) {
         assert([302, 303].includes(response.status));
         const next = new URL(response.headers.location, origin); assert.equal(next.origin, origin);
-        if (next.pathname === '/callback') { assert.equal(next.searchParams.get('state'), 'proxy-fixture-state'); code = next.searchParams.get('code'); break; }
+        if (next.pathname === '/callback') {
+            assert.equal(next.searchParams.get('state'), authorizationRequest.state);
+            assert.equal(next.searchParams.get('iss'), metadata.issuer);
+            code = next.searchParams.get('code'); break;
+        }
         response = await browser(next);
     }
     assert(code && secureCookies.length > 1 && userLookups === 1);

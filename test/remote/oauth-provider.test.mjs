@@ -90,18 +90,28 @@ test('actual discovery matches trusted metadata and rejects openid for the fixed
     assert.equal(response.status, 200);
     const discovery = await response.json();
     for (const [field, value] of Object.entries(f.host.metadata)) assert.deepEqual(discovery[field], value, field);
+    assert.deepEqual(discovery.scopes_supported, ['crawl:use', 'offline_access']);
+    assert.equal(discovery.authorization_response_iss_parameter_supported, true);
     assert.equal(discovery.registration_endpoint, undefined);
     assert.equal(discovery.client_id_metadata_document_supported, undefined);
     assert.equal(discovery.userinfo_endpoint, undefined);
     assert.equal(discovery.end_session_endpoint, undefined);
     assert.equal(discovery.pushed_authorization_request_endpoint, undefined);
     assert.equal(discovery.dpop_signing_alg_values_supported, undefined);
+    const head = await fetch(`${origin}/.well-known/openid-configuration`, { method: 'HEAD' });
+    assert.equal(head.status, 200);
+    assert.equal(await head.text(), '');
+    const unsupported = await fetch(`${origin}/.well-known/openid-configuration`, { method: 'POST' });
+    assert.equal(unsupported.status, 404);
+    assert.equal(await unsupported.text(), 'Not Found');
     const auth = new URL(`${origin}/auth`);
     auth.search = new URLSearchParams({ client_id: 'fixed-client', redirect_uri: f.options.clients[0].redirectUris[0],
         response_type: 'code', scope: 'openid crawl:use', state: 'fixture-state', code_challenge: 'x'.repeat(43), code_challenge_method: 'S256' });
     const denied = await fetch(auth, { redirect: 'manual' });
     assert.equal(denied.status, 303);
-    assert.equal(new URL(denied.headers.get('location')).searchParams.get('error'), 'invalid_scope');
+    const destination = new URL(denied.headers.get('location'));
+    assert.equal(destination.searchParams.get('error'), 'invalid_scope');
+    assert.equal(destination.searchParams.get('iss'), origin);
     assert.equal(f.commands.length, 0);
 });
 
