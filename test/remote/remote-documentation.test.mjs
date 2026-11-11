@@ -39,12 +39,18 @@ test('operator guides generate protected configurations and validate default and
         const config = await loadRemoteConfig(filename);
         assert.equal(config.issuerUrl, 'https://mcp.example.com');
         assert.equal(config.mcpPath, '/mcp');
-        assert.deepEqual(config.trustedProxyCidrs, ['192.0.2.0/24']);
+        assert.equal(config.tlsTermination, 'ingress');
+        assert.equal(config.trustedProxyCidrs, undefined);
         assert.equal(config.listen.tls, undefined);
         assert.equal(config.encryptionKeys['encryption-1'].byteLength, 32);
         assert.equal(config.fingerprintKey.byteLength, 32);
         if (process.platform !== 'win32') assert.equal(fs.statSync(filename).mode & 0o777, 0o600);
         const original = fs.readFileSync(filename);
+        const ingressCheck = spawnSync(process.execPath, [fileURLToPath(new URL('./remote.js', executable)), '--config', filename, '--check'],
+            { encoding: 'utf8', timeout: 5000, env: { NODE_OPTIONS: process.env.NODE_OPTIONS } });
+        assert.equal(ingressCheck.status, 0, ingressCheck.stderr); assert.equal(ingressCheck.stderr, '');
+        assert.match(ingressCheck.stdout, /No connection was attempted/);
+        assert.deepEqual(fs.readFileSync(filename), original);
         const repeat = run();
         assert.notEqual(repeat.status, 0); assert.equal(repeat.stdout, '');
         assert.deepEqual(fs.readFileSync(filename), original);
@@ -55,6 +61,7 @@ test('operator guides generate protected configurations and validate default and
                 listen: { host: '127.0.0.1', port: 45893 },
                 redis: { socketPath: path.join(directory, 'not-connected.sock'), namespace: 'docs_fixture' } };
             delete local.trustedProxyCidrs;
+            delete local.tlsTermination;
             const candidate = Buffer.from(JSON.stringify(local));
             fs.writeFileSync(filename, candidate);
             const loaded = await loadRemoteConfig(filename);

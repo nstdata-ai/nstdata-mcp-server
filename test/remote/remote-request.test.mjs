@@ -51,3 +51,25 @@ test('direct TLS and loopback retain their original no-forwarded-header boundary
     assert(createRemoteRequestPolicy('http://127.0.0.1:8080')(request({ host: '127.0.0.1:8080' })));
     assert.throws(() => createRemoteRequestPolicy('http://127.0.0.1:8080', ['127.0.0.1']));
 });
+
+test('ingress TLS termination requires an exact authority and one HTTPS protocol header without peer CIDRs', () => {
+    const allowed = createRemoteRequestPolicy(issuer, undefined, 'ingress');
+    for (const peer of ['127.0.0.1', '10.1.2.3', '192.0.2.1', '2001:db8::19']) {
+        assert(allowed(request({ peer, headers: [['X-Forwarded-Proto', 'https']] })));
+    }
+    assert(allowed(request({ host: 'MCP.EXAMPLE.TEST', headers: [['X-Forwarded-Proto', 'https']] })));
+    for (const headers of [[], [['X-Forwarded-Proto', 'http']], [['X-Forwarded-Proto', 'HTTPS']],
+        [['X-Forwarded-Proto', 'https,http']], [['X-Forwarded-Proto', 'https, https']], [['X-Forwarded-Proto', ' https']],
+        ...['Forwarded', 'X-Forwarded-Host', 'X-Forwarded-Port'].map(name => [['X-Forwarded-Proto', 'https'], [name, '']])]) {
+        assert.equal(allowed(request({ headers })), false);
+    }
+    for (const raw of [['x-forwarded-proto', 'https'], ['host', 'mcp.example.test']]) {
+        assert.equal(allowed(request({ headers: [['X-Forwarded-Proto', 'https']], raw })), false);
+    }
+    for (const host of ['attacker.invalid', 'mcp.example.test:443']) {
+        assert.equal(allowed(request({ host, headers: [['X-Forwarded-Proto', 'https']] })), false);
+    }
+    assert.equal(allowed(request({ encrypted: true })), false);
+    assert.throws(() => createRemoteRequestPolicy('http://127.0.0.1:8080', undefined, 'ingress'));
+    assert.throws(() => createRemoteRequestPolicy(issuer, ['127.0.0.1/32'], 'ingress'));
+});

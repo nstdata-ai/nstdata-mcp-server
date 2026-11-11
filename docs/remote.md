@@ -16,14 +16,17 @@ Remote is a separate application built from this repository. It is not included 
 
 | Mode | Application configuration | Certificate location |
 |---|---|---|
-| Trusted reverse proxy | Internal HTTP listener plus `trustedProxyCidrs`; omit `listen.tls` | Existing HTTPS gateway |
-| Direct application TLS | `listen.tls.certFile` and `listen.tls.keyFile`; omit `trustedProxyCidrs` | Application-mounted files |
+| Managed ingress | Internal HTTP listener plus `tlsTermination: 'ingress'` | Existing Kubernetes ingress or HTTPS gateway |
+| IP-restricted reverse proxy | Internal HTTP listener plus `trustedProxyCidrs` | Existing HTTPS gateway |
+| Direct application TLS | `listen.tls.certFile` and `listen.tls.keyFile` | Application-mounted files |
 
-These modes are mutually exclusive; proxy trust is never automatic. A trusted reverse proxy usually fits existing Kubernetes/ALB infrastructure. Its HTTP backend must be on a controlled internal network, restricted to the trusted ingress through network policy or firewall rules. Public hops still require HTTPS. Use application TLS with Layer 4 passthrough when internal encryption is required.
+Choose exactly one mode for an HTTPS issuer. Managed ingress fits an existing Kubernetes/ALB deployment: expose the application through a private `ClusterIP` Service and let the platform control access to its HTTP backend. This explicit mode does not require gateway IP ranges or application certificate files. It trusts the platform's ingress boundary; Host and protocol checks do not identify the gateway or replace network isolation. Do not expose the HTTP listener directly to the public internet. Use IP restrictions when the application must also verify the immediate peer, or direct TLS with Layer 4 passthrough when internal encryption is required.
 
-`trustedProxyCidrs` matches the immediate socket peer observed by the application, never `X-Forwarded-For`. Supply 1–32 literal IPs or network-aligned IPv4/IPv6 CIDRs. `/0`, hostnames, IPv6 zone identifiers, duplicate entries and any IPv6 network overlapping the IPv4-mapped range are rejected. The gateway must preserve the fixed issuer Host, remove client-supplied forwarding information, and set one `X-Forwarded-Proto: https` header. Duplicate Host/protocol headers, protocol lists, `Forwarded`, `X-Forwarded-Host` and `X-Forwarded-Port` are rejected. Public addresses are never inferred from forwarded headers. Account for NAT: the gateway's published external IP range is not necessarily its backend peer range.
+Both ingress modes require the gateway to preserve the fixed issuer Host, remove client-supplied forwarding information, and set one `X-Forwarded-Proto: https` header. Duplicate Host/protocol headers, protocol lists, `Forwarded`, `X-Forwarded-Host` and `X-Forwarded-Port` are rejected. Public addresses are never inferred from forwarded headers.
 
-Verify this contract at the actual gateway. For Alibaba ALB, explicitly enable the listener's `XForwardedForProtoEnabled` setting; it is disabled by default. Verify header replacement/sanitization rather than assuming a listener configuration makes client-supplied values safe. Keep issuer, resource and callback URLs stable across restarts.
+For the optional IP-restricted mode, `trustedProxyCidrs` matches the immediate socket peer, never `X-Forwarded-For`. Supply 1–32 literal IPs or network-aligned IPv4/IPv6 CIDRs. `/0`, hostnames, IPv6 zone identifiers, duplicate entries and IPv6 networks overlapping the IPv4-mapped range are rejected. Account for NAT: external gateway addresses may differ from backend peer addresses.
+
+Verify the header contract at the actual gateway. When Alibaba ALB terminates public TLS, its listener's `XForwardedForProtoEnabled` option supplies the protocol header; optional forwarded Host/port headers must remain disabled for this service. If TLS terminates at an earlier gateway, preserve that gateway's validated external protocol. Do not modify a shared listener without assessing its other services. Keep issuer, resource and callback URLs stable across restarts.
 
 ## Build and configure
 
@@ -53,7 +56,7 @@ const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const config = {
   issuerUrl: 'https://mcp.example.com',
   listen: { host: '0.0.0.0', port: 8080 },
-  trustedProxyCidrs: ['192.0.2.0/24'],
+  tlsTermination: 'ingress',
   redis: {
     url: 'rediss://USER:PASSWORD@redis.example.com:6379/0',
     namespace: 'production'
@@ -79,14 +82,15 @@ Run it once, using an existing protected directory:
 node create-remote-config.mjs /absolute/path/remote.json
 ```
 
-The program refuses to overwrite existing files and never prints secrets. `192.0.2.0/24` is a documentation-only network: replace it with the actual trusted proxy range. Edit the protected JSON with the issuer, listener, proxy peers, URL-encoded Redis credentials, client ID and exact callback. For direct TLS, remove `trustedProxyCidrs` and set the certificate/private-key paths in `listen.tls`. Copy only the matching `clientSecret` into the platform's protected OAuth settings. Do not regenerate keys on restart.
+The program refuses to overwrite existing files and never prints secrets. Edit the protected JSON with the issuer, listener, URL-encoded Redis credentials, client ID and exact callback. The example uses managed ingress. For IP restrictions, replace `tlsTermination` with the actual `trustedProxyCidrs`; for direct TLS, replace it with certificate/private-key paths in `listen.tls`. Copy only the matching `clientSecret` into the platform's protected OAuth settings. Do not regenerate keys on restart. Existing configurations keep their original behavior unless this new mode is explicitly selected; use an application/image that supports it.
 
 | Field | Configuration rule |
 |---|---|
 | `issuerUrl` | HTTPS origin without a path; the MCP resource is this origin plus `mcpPath` |
 | `mcpPath` | Optional MCP endpoint path; defaults to `/mcp`. Set `/crawl` for a Crawl-specific endpoint |
 | `listen` | Numeric IP and port `1–65535`; HTTP behind a proxy, or `tls.certFile` and `tls.keyFile` for direct TLS |
-| `trustedProxyCidrs` | Required immediate-peer IP/CIDR allowlist for proxy mode; mutually exclusive with `listen.tls` |
+| `tlsTermination` | Set `"ingress"` to trust a platform-managed HTTPS ingress with a private HTTP backend; mutually exclusive with `trustedProxyCidrs` and `listen.tls` |
+| `trustedProxyCidrs` | Optional immediate-peer IP/CIDR allowlist mode; mutually exclusive with `tlsTermination` and `listen.tls` |
 | `redis` | Exactly one `url` or absolute `socketPath`, plus a distinct namespace per environment |
 | `clients` | Pre-registered client IDs, secrets of at least 32 bytes, and exact callback URLs |
 | `cookieKeys` | Stable secrets of at least 32 bytes; put the current key first |
@@ -109,7 +113,7 @@ Keep `issuerUrl` as `https://mcp.example.com`. The resource metadata is then ser
 
 Changing `mcpPath` changes the OAuth resource identifier. Update the client URL and reconnect to authorize the new resource; existing tokens are not interchangeable between paths. The service exposes one configured MCP path without an automatic `/mcp` alias or redirect. Use a matching application/image and configuration: older versions reject the `mcpPath` field. Preserve the existing keys and Redis namespace when changing the path.
 
-For loopback development only, an HTTP issuer can use literal `127.0.0.1` or `[::1]`, with the same loopback listen address and port and neither TLS nor trusted proxy configuration. Plain `redis:` URLs are also restricted to literal loopback addresses. Do not expose that configuration publicly.
+For loopback development only, an HTTP issuer can use literal `127.0.0.1` or `[::1]`, with the same loopback listen address and port and no `tlsTermination`, TLS or trusted proxy configuration. Plain `redis:` URLs are also restricted to literal loopback addresses. Do not expose that configuration publicly.
 
 ## Validate and start
 
@@ -130,7 +134,7 @@ Each process accepts at most 256 concurrent connections, 32 active business requ
 | `GET /health/ready` | Startup completed and the Redis client is locally ready |
 | `mcpPath` (default `/mcp`) | Authenticated Streamable HTTP MCP resource with six Crawl tools |
 
-Health probes may use the issuer Host or an IP-literal Host. The IP exception applies only to the two exact health paths, never OAuth/MCP. Direct probes omit forwarding headers; proxied probes must pass the normal trusted-peer and HTTPS protocol checks. Health checks do not query Redis each time and do not prove persistence, Lua permissions, upstream access or platform authorization. An unauthenticated request to the configured MCP path returns an OAuth challenge; it is not a readiness check.
+Health probes may use the issuer Host or an IP-literal Host. The IP exception applies only to the two exact health paths, never OAuth/MCP. Direct probes omit forwarding headers; proxied probes must pass the selected ingress mode's protocol and peer checks. Health checks do not query Redis each time and do not prove persistence, Lua permissions, upstream access or platform authorization. An unauthenticated request to the configured MCP path returns an OAuth challenge; it is not a readiness check.
 
 ## Run in a container
 
@@ -154,7 +158,7 @@ docker run --rm --user "$(id -u):$(id -g)" --publish 127.0.0.1:8080:8080 \
   nstdata-mcp-remote:local --config /run/secrets/remote.json
 ```
 
-This proxy-mode example listens on `0.0.0.0:8080` and publishes only the host loopback port for a local gateway. Configure HTTPS at that gateway, use the actual trusted backend peer range, and ensure Redis is reachable from the container. Adjust port mappings for direct TLS. Linux deployments using UID 1000 must deliver readable files through their Secret mount, CSI driver or initialization step while preserving configuration/private-key modes `0400` or `0600`.
+This managed-ingress example listens on `0.0.0.0:8080` and publishes only the host loopback port for a local gateway. Configure HTTPS and the required headers at that gateway, and ensure Redis is reachable from the container. Adjust port mappings for direct TLS. Linux deployments using UID 1000 must deliver readable files through their Secret mount, CSI driver or initialization step while preserving configuration/private-key modes `0400` or `0600`.
 
 ## Publish an image
 

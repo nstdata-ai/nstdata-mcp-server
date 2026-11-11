@@ -198,6 +198,11 @@ test('Remote service rejects unsafe direct configuration before opening any conn
     try {
         for (const input of [
             { ...options, issuerUrl: options.issuerUrl.replace('http:', 'https:') },
+            { ...options, tlsTermination: 'invalid' },
+            { ...options, tlsTermination: 'ingress' },
+            { ...options, issuerUrl: options.issuerUrl.replace('http:', 'https:'), tlsTermination: 'ingress', trustedProxyCidrs: ['127.0.0.1/32'] },
+            { ...options, issuerUrl: options.issuerUrl.replace('http:', 'https:'), tlsTermination: 'ingress',
+                listen: { ...options.listen, tls: { keyFile: '/fixture/key.pem', certFile: '/fixture/cert.pem' } } },
             { ...options, issuerUrl: 'http://public.invalid', listen: { ...options.listen, host: '0.0.0.0' } },
             { ...options, issuerUrl: 'http://127.0.0.1:' + (options.listen.port === 65535 ? 65534 : options.listen.port + 1) },
             { ...options, redis: { namespace: options.redis.namespace } },
@@ -392,7 +397,7 @@ globalThis.fetch=async()=>{process.exitCode=91;throw new Error('Upstream request
 });
 
 
-test('HTTPS gateway to HTTP Remote preserves OAuth, secure cookies and authenticated MCP while rejecting proxy bypass', { timeout: 20000 }, async t => {
+for (const tlsTermination of ['trusted CIDR', 'ingress']) test(`HTTPS gateway to HTTP Remote preserves OAuth, secure cookies and authenticated MCP (${tlsTermination})`, { timeout: 20000 }, async t => {
     const origins = [], syntheticKey = 'synthetic-proxy-upstream-key';
     let userLookups = 0, crawlCalls = 0, service, gateway, client;
     const redis = await isolatedRedis(t, { allowedOrigins: () => origins, virtualFetch: async (input, url) => {
@@ -432,7 +437,9 @@ test('HTTPS gateway to HTTP Remote preserves OAuth, secure cookies and authentic
         await fs.rm(directory, { recursive: true, force: true });
     });
     const options = config(backendPort, redis.socketPath);
-    options.issuerUrl = origin; options.trustedProxyCidrs = ['127.0.0.1/32'];
+    options.issuerUrl = origin;
+    if (tlsTermination === 'ingress') options.tlsTermination = 'ingress';
+    else options.trustedProxyCidrs = ['127.0.0.1/32'];
     options.clients[0].redirectUris = [origin + '/callback'];
     service = await startRemoteService(options);
     const headers = { host: new URL(origin).host };
@@ -450,12 +457,14 @@ test('HTTPS gateway to HTTP Remote preserves OAuth, secure cookies and authentic
         { 'x-forwarded-proto': 'https', 'x-forwarded-port': '443' }]) {
         assert.equal((await request(backend + '/.well-known/openid-configuration', { headers: { ...headers, ...changed } })).status, 400);
     }
-    const deniedPort = await port(), deniedOrigin = `http://127.0.0.1:${deniedPort}`;
-    origins.push(deniedOrigin);
-    const deniedService = await startRemoteService({ ...options, listen: { host: '127.0.0.1', port: deniedPort }, trustedProxyCidrs: ['192.0.2.1/32'] });
-    try {
-        assert.equal((await request(deniedOrigin + '/.well-known/openid-configuration', { headers: { ...headers, 'x-forwarded-proto': 'https' } })).status, 400);
-    } finally { await deniedService.close(); }
+    if (tlsTermination === 'trusted CIDR') {
+        const deniedPort = await port(), deniedOrigin = `http://127.0.0.1:${deniedPort}`;
+        origins.push(deniedOrigin);
+        const deniedService = await startRemoteService({ ...options, listen: { host: '127.0.0.1', port: deniedPort }, trustedProxyCidrs: ['192.0.2.1/32'] });
+        try {
+            assert.equal((await request(deniedOrigin + '/.well-known/openid-configuration', { headers: { ...headers, 'x-forwarded-proto': 'https' } })).status, 400);
+        } finally { await deniedService.close(); }
+    }
     for (const duplicate of [['X-Forwarded-Proto', 'https'], ['Host', new URL(origin).host]]) {
         assert.equal((await request(backend + '/mcp', { headers: ['Host', new URL(origin).host, 'X-Forwarded-Proto', 'https', ...duplicate] })).status, 400);
     }

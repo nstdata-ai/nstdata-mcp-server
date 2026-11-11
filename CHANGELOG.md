@@ -6,6 +6,7 @@
 
 - Add a separate Remote MCP application and container build, keeping OAuth and Redis dependencies and runtime output outside the stdio npm package.
 - Allow a configured Remote MCP endpoint such as `/crawl`, retaining `/mcp` as the default and binding OAuth discovery and tokens to the selected resource.
+- Support a platform-managed HTTPS ingress with a private HTTP backend, without requiring application certificate files or proxy IP ranges; retain the existing direct TLS and IP-restricted modes.
 
 ## 1.0.3
 

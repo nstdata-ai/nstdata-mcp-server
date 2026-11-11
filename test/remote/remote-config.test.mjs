@@ -220,3 +220,25 @@ test('Remote proxy configuration accepts explicit network peers without applicat
     invalid(input => { input.trustedProxyCidrs = ['127.0.0.1']; });
     invalid(input => { input.issuerUrl = 'http://127.0.0.1:8080'; input.listen = { host: '127.0.0.1', port: 8080 }; input.trustedProxyCidrs = ['127.0.0.1']; });
 });
+
+test('Remote ingress TLS termination accepts a public HTTPS issuer and a private HTTP listener without proxy CIDRs', () => {
+    const input = fixture(); delete input.listen.tls;
+    input.listen.port = 8080; input.tlsTermination = 'ingress';
+    const before = structuredClone(input), result = parseRemoteConfig(input);
+    assert.deepEqual(input, before);
+    assert.equal(result.tlsTermination, 'ingress');
+    assert.equal(result.issuerUrl, 'https://mcp.example.test');
+    assert.deepEqual(result.listen, { host: '0.0.0.0', port: 8080 });
+    assert.equal(result.trustedProxyCidrs, undefined);
+});
+
+test('Remote ingress TLS termination rejects conflicting transport settings and invalid modes', () => {
+    invalid(input => { input.tlsTermination = 'ingress'; });
+    for (const cidrs of [[], ['127.0.0.1/32']]) {
+        invalid(input => { delete input.listen.tls; input.tlsTermination = 'ingress'; input.trustedProxyCidrs = cidrs; });
+    }
+    for (const mode of [null, false, 1, [], {}, '', 'direct', 'INGRESS', ' ingress', 'ingress ']) {
+        invalid(input => { delete input.listen.tls; input.tlsTermination = mode; });
+    }
+    invalid(input => { input.issuerUrl = 'http://127.0.0.1:8080'; input.listen = { host: '127.0.0.1', port: 8080 }; input.tlsTermination = 'ingress'; });
+});

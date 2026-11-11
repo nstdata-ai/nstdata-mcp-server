@@ -45,10 +45,12 @@ export function trustedProxyPeers(cidrs: readonly string[] | undefined): BlockLi
     return peers;
 }
 
-export function createRemoteRequestPolicy(issuerUrl: string, cidrs?: readonly string[]): (request: IncomingMessage, health?: boolean) => boolean {
+export function createRemoteRequestPolicy(issuerUrl: string, cidrs?: readonly string[], tlsTermination?: 'ingress'): (request: IncomingMessage, health?: boolean) => boolean {
     const issuer = new URL(issuerUrl);
     const peers = trustedProxyPeers(cidrs);
-    if (peers && issuer.protocol !== 'https:') throw new Error();
+    if (tlsTermination !== undefined && tlsTermination !== 'ingress' ||
+        tlsTermination === 'ingress' && (peers || issuer.protocol !== 'https:') ||
+        peers && issuer.protocol !== 'https:') throw new Error();
     return (request, health = false) => {
         const counts = new Map<string, number>();
         for (let index = 0; index < request.rawHeaders.length; index += 2) {
@@ -65,6 +67,8 @@ export function createRemoteRequestPolicy(issuerUrl: string, cidrs?: readonly st
                 (literal[3] === undefined || /^[1-9][0-9]{0,4}$/.test(literal[3]) && Number(literal[3]) <= 65535);
         }
         if (!exactHost) return false;
+        if (tlsTermination === 'ingress') return counts.get('x-forwarded-proto') === 1 &&
+            request.headers['x-forwarded-proto'] === 'https';
         if (!peers) return !counts.has('x-forwarded-proto') &&
             (issuer.protocol !== 'https:' || (request.socket as { encrypted?: boolean }).encrypted === true);
         const address = request.socket.remoteAddress;
