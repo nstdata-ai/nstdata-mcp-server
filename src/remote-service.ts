@@ -131,14 +131,17 @@ export async function startRemoteService(input: RemoteServiceConfig): Promise<Re
         if (config.issuerUrl !== issuer.origin || !isIP(config.listen.host) ||
             !Number.isSafeInteger(config.listen.port) || config.listen.port < 1 || config.listen.port > 65535 ||
             Boolean(config.redis.url) === Boolean(config.redis.socketPath)) throw new Error();
+        if (config.tlsTermination !== undefined && config.tlsTermination !== 'ingress') throw new Error();
         if (issuer.protocol === 'https:') {
-            if (Boolean(config.listen.tls) === Boolean(config.trustedProxyCidrs)) throw new Error();
-        } else if (issuer.protocol !== 'http:' || config.trustedProxyCidrs || config.listen.tls || Number(issuer.port || 80) !== config.listen.port || !['127.0.0.1', '[::1]'].includes(issuer.hostname) ||
+            if (config.tlsTermination === 'ingress') {
+                if (config.listen.tls || config.trustedProxyCidrs) throw new Error();
+            } else if (Boolean(config.listen.tls) === Boolean(config.trustedProxyCidrs)) throw new Error();
+        } else if (issuer.protocol !== 'http:' || config.tlsTermination || config.trustedProxyCidrs || config.listen.tls || Number(issuer.port || 80) !== config.listen.port || !['127.0.0.1', '[::1]'].includes(issuer.hostname) ||
             config.listen.host !== issuer.hostname.replace(/^\[|\]$/g, '')) throw new Error();
         if (config.redis.socketPath && !isAbsolute(config.redis.socketPath)) throw new Error();
         const redis = config.redis.url ? new URL(config.redis.url) : undefined;
         if (redis && redis.protocol !== 'rediss:' && !(redis.protocol === 'redis:' && ['127.0.0.1', '[::1]'].includes(redis.hostname))) throw new Error();
-        const requestAllowed = createRemoteRequestPolicy(config.issuerUrl, config.trustedProxyCidrs);
+        const requestAllowed = createRemoteRequestPolicy(config.issuerUrl, config.trustedProxyCidrs, config.tlsTermination);
         const tls = await loadRemoteTls(config.listen.tls, config.issuerUrl);
         client = createClient({
             ...(config.redis.url ? { url: config.redis.url } : {}),
@@ -159,7 +162,8 @@ export async function startRemoteService(input: RemoteServiceConfig): Promise<Re
             currentKeyId: config.currentKeyId, fingerprintKey: config.fingerprintKey });
         handler = createRemoteHandler({ issuerUrl: config.issuerUrl, resourceUrl,
             clients: config.clients, cookieKeys: config.cookieKeys, jwks: config.jwks, store, credentials,
-            verifyApiKey: createApiKeyVerifier(), allowedOrigins: config.allowedOrigins, trustedProxyCidrs: config.trustedProxyCidrs });
+            verifyApiKey: createApiKeyVerifier(), allowedOrigins: config.allowedOrigins, trustedProxyCidrs: config.trustedProxyCidrs,
+            tlsTermination: config.tlsTermination });
         await deadline((async () => {
             await client!.connect();
             if (await command(['PING']) !== 'PONG') throw new RedisStoreError();

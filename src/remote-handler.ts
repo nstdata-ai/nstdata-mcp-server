@@ -9,6 +9,7 @@ import { createRemoteRequestPolicy, mcpEndpointPath } from './remote-request.js'
 
 export interface RemoteHandlerOptions extends OAuthProviderOptions {
     trustedProxyCidrs?: readonly string[];
+    tlsTermination?: 'ingress';
     verifyApiKey: (apiToken: string, signal: AbortSignal) => Promise<boolean>;
     allowedOrigins?: readonly string[];
     crawl?: HttpHandlerOptions['crawl'];
@@ -68,7 +69,7 @@ async function bodyBytes(request: IncomingMessage, signal: AbortSignal, maxBytes
     } finally { signal.removeEventListener('abort', stop); }
 }
 
-/** Node HTTP assembly with direct TLS or an explicitly restricted reverse proxy. */
+/** Node HTTP assembly with direct TLS or an explicitly configured reverse proxy. */
 export function createRemoteHandler(options: RemoteHandlerOptions): RemoteHandler {
     try { return configureRemoteHandler(options); }
     catch { throw new Error('Invalid Remote configuration'); }
@@ -90,10 +91,10 @@ function configureRemoteHandler(options: RemoteHandlerOptions): RemoteHandler {
     const clients = new Map(options.clients.map(client => [client.clientId, client.name ?? client.clientId]));
     const callbackOrigins = [...new Set(options.clients.flatMap(client => client.redirectUris.map(uri => new URL(uri).origin)))];
     const providerCsp = `default-src 'none'; script-src 'self'; form-action 'self' ${callbackOrigins.join(' ')}; frame-ancestors 'none'; base-uri 'none'`;
-    const requestAllowed = createRemoteRequestPolicy(options.issuerUrl, options.trustedProxyCidrs);
+    const requestAllowed = createRemoteRequestPolicy(options.issuerUrl, options.trustedProxyCidrs, options.tlsTermination);
     const oauth = createOAuthProvider(options);
-    // Koa may trust the protocol only after this handler validates the direct peer and headers.
-    oauth.provider.proxy = options.trustedProxyCidrs !== undefined;
+    // The request policy validates forwarded headers before Koa uses the proxy protocol.
+    oauth.provider.proxy = options.trustedProxyCidrs !== undefined || options.tlsTermination === 'ingress';
     const mcp = createOAuthHttpHandler({ resourceUrl: resource.href, allowedOrigins: [...allowedOrigins],
         oauthMetadata: oauth.metadata, verifyCredential: oauth.verifyCredential, crawl: options.crawl,
         maxRequestBodyBytes: maxBody });

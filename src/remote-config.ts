@@ -13,6 +13,7 @@ export interface RemoteServiceConfig {
     mcpPath?: string;
     listen: { host: string; port: number; tls?: { keyFile: string; certFile: string } };
     trustedProxyCidrs?: string[];
+    tlsTermination?: 'ingress';
     redis: { url?: string; socketPath?: string; namespace: string };
     clients: OAuthFixedClient[];
     cookieKeys: string[];
@@ -54,6 +55,7 @@ const configuration = z.strictObject({
     listen: z.strictObject({ host: z.string().refine(value => isIP(value) !== 0), port: z.number().int().min(1).max(65535),
         tls: z.strictObject({ keyFile: absoluteFile, certFile: absoluteFile }).optional() }),
     trustedProxyCidrs: z.array(z.string()).min(1).max(32).optional(),
+    tlsTermination: z.literal('ingress').optional(),
     redis: z.strictObject({ url: z.string().min(1).max(8192).optional(), socketPath: absoluteFile.optional(), namespace: keyId }),
     clients: z.array(z.strictObject({
         clientId: z.string().min(1).max(256).regex(/^[^\s\u0000-\u001f\u007f]+$/u), clientSecret: secret,
@@ -125,8 +127,10 @@ export function parseRemoteConfig(value: unknown): RemoteServiceConfig {
         mcpEndpointPath(parsed.mcpPath);
         trustedProxyPeers(parsed.trustedProxyCidrs);
         if (issuer.protocol === 'http:') {
-            if (parsed.trustedProxyCidrs || parsed.listen.tls || parsed.listen.host !== issuer.hostname.replace(/^\[|\]$/g, '') ||
+            if (parsed.tlsTermination || parsed.trustedProxyCidrs || parsed.listen.tls || parsed.listen.host !== issuer.hostname.replace(/^\[|\]$/g, '') ||
                 parsed.listen.port !== Number(issuer.port || 80)) throw new Error();
+        } else if (parsed.tlsTermination === 'ingress') {
+            if (parsed.listen.tls || parsed.trustedProxyCidrs) throw new Error();
         } else if (Boolean(parsed.listen.tls) === Boolean(parsed.trustedProxyCidrs)) throw new Error();
         if (Boolean(parsed.redis.url) === Boolean(parsed.redis.socketPath)) throw new Error();
         if (parsed.redis.url) {

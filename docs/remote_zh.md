@@ -16,14 +16,17 @@ Remote 是从本仓库构建的独立应用，不包含在本地 `@nstdata-ai/mc
 
 | 方式 | 应用配置 | 证书位置 |
 |---|---|---|
-| 可信反向代理 | `listen` 监听内部 HTTP，配置 `trustedProxyCidrs`，不配置 `listen.tls` | 现有 HTTPS 网关 |
-| 应用直接 TLS | 配置 `listen.tls.certFile` 和 `listen.tls.keyFile`，不配置 `trustedProxyCidrs` | 应用挂载目录 |
+| 托管 Ingress | 内部 HTTP 监听，加 `tlsTermination: 'ingress'` | 现有 Kubernetes Ingress 或 HTTPS 网关 |
+| 按 IP 限制的反向代理 | 内部 HTTP 监听，加 `trustedProxyCidrs` | 现有 HTTPS 网关 |
+| 应用直接 TLS | `listen.tls.certFile` 和 `listen.tls.keyFile` | 应用挂载目录 |
 
-两种方式互斥；不会自动信任代理。复用 Kubernetes／ALB 时，通常选择可信反向代理方式。网关到应用的 HTTP 必须位于受控内网，并通过网络策略或防火墙仅允许可信入口；公网各跳仍需 HTTPS。内部也要求加密时使用应用 TLS，并由四层入口透传。
+HTTPS issuer 必须选择其中一种方式。已有 Kubernetes／ALB 部署使用托管 Ingress：通过内部 `ClusterIP` Service 提供服务，由平台控制 HTTP 后端的访问，不必逐个填写网关 IP 或给应用挂载证书。该模式显式信任平台的入口边界；Host 和协议校验不能识别真实网关，也不能代替网络隔离。不要将内部 HTTP 端口直接暴露到公网。应用还需核对直接对端时使用 IP 限制；内部要求加密时使用应用 TLS 和四层透传。
 
-`trustedProxyCidrs` 匹配应用实际观察到的直接对端 IP，不匹配 `X-Forwarded-For`。配置1–32个字面量IP或网络地址对齐的IPv4／IPv6 CIDR；不接受`/0`、主机名、带zone的IPv6、重复项或与IPv4映射范围重叠的IPv6网段。网关必须保留固定issuer的Host，删除客户端传入的转发信息，再写入唯一的`X-Forwarded-Proto: https`。服务拒绝重复Host／协议头、协议列表及`Forwarded`、`X-Forwarded-Host`、`X-Forwarded-Port`，不会用转发头推导公开地址。NAT后应按实际直接对端配置，不能直接复制网关公布的外部IP范围。
+两种代理方式均要求网关保留固定 issuer 的 Host，删除客户端传入的转发信息，再写入唯一的 `X-Forwarded-Proto: https`。服务拒绝重复 Host／协议头、协议列表及 `Forwarded`、`X-Forwarded-Host`、`X-Forwarded-Port`，不会用转发头推导公开地址。
 
-必须在实际网关验证上述契约。阿里云ALB需显式启用监听器的`XForwardedForProtoEnabled`，该设置默认关闭；还需验证客户端转发头的清理／覆盖，不能只凭监听器配置认定安全。重启时保持issuer、resource和callback URL稳定。
+可选的 IP 限制方式使用 `trustedProxyCidrs` 匹配实际直接对端，不匹配 `X-Forwarded-For`。配置 1–32 个字面量 IP 或网络地址对齐的 IPv4／IPv6 CIDR；不接受 `/0`、主机名、带 zone 的 IPv6、重复项或与 IPv4 映射范围重叠的 IPv6 网段。NAT 后的后端对端可能不同于网关公开地址。
+
+在实际入口核对转发头契约。由阿里云 ALB 终止公网 TLS 时，通过监听器的 `XForwardedForProtoEnabled` 提供协议头；此服务不接受可选的转发 Host／端口头。若 TLS 在更前置网关终止，应保留该网关验证后的外部协议。修改共享监听器前需评估其他服务。重启时保持 issuer、resource 和 callback URL 稳定。
 
 ## 构建与配置
 
@@ -53,7 +56,7 @@ const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const config = {
   issuerUrl: 'https://mcp.example.com',
   listen: { host: '0.0.0.0', port: 8080 },
-  trustedProxyCidrs: ['192.0.2.0/24'],
+  tlsTermination: 'ingress',
   redis: {
     url: 'rediss://USER:PASSWORD@redis.example.com:6379/0',
     namespace: 'production'
@@ -79,14 +82,15 @@ console.log('Remote configuration created.');
 node create-remote-config.mjs /absolute/path/remote.json
 ```
 
-程序拒绝覆盖现有文件，也不打印机密。示例中的 `192.0.2.0/24` 是文档保留网段，必须替换为实际可信代理范围。编辑受保护的 JSON，填写实际 issuer、监听端口、可信代理范围、已编码的 Redis 凭据、client ID 和精确 callback。采用应用 TLS 时，移除 `trustedProxyCidrs` 并填写 `listen.tls` 的证书／私钥路径。只将对应的 `clientSecret` 复制到平台受保护的 OAuth 配置中，不要在每次重启时重新生成密钥。
+程序拒绝覆盖现有文件，也不打印机密。编辑受保护的 JSON，填写实际 issuer、监听端口、已编码的 Redis 凭据、client ID 和精确 callback。示例使用托管 Ingress；需要 IP 限制时，用实际 `trustedProxyCidrs` 替换 `tlsTermination`；采用应用 TLS 时，移除它并填写 `listen.tls` 的证书／私钥路径。只将对应的 `clientSecret` 复制到平台受保护的 OAuth 配置中，不要在每次重启时重新生成密钥。已有配置保留原行为，只有显式选择新模式才会变化；应用／镜像需支持该模式。
 
 | 字段 | 配置规则 |
 |---|---|
 | `issuerUrl` | 不含路径的 HTTPS origin；MCP resource 为该 origin 加 `mcpPath` |
 | `mcpPath` | 可选的 MCP 端点路径；默认为 `/mcp`，设为 `/crawl` 可提供 Crawl 专用入口 |
 | `listen` | 数字 IP 和 `1–65535` 端口；代理模式监听 HTTP，直 TLS 模式还需 `tls.certFile`、`tls.keyFile` |
-| `trustedProxyCidrs` | 代理模式必填的直接对端 IP／CIDR；与 `listen.tls` 互斥 |
+| `tlsTermination` | 设为 `"ingress"`，信任平台托管的 HTTPS 入口和内部 HTTP 后端；与 `trustedProxyCidrs`、`listen.tls` 互斥 |
+| `trustedProxyCidrs` | 可选的直接对端 IP／CIDR 限制方式；与 `tlsTermination`、`listen.tls` 互斥 |
 | `redis` | `url` 或绝对 `socketPath` 二选一；不同环境使用独立 namespace |
 | `clients` | 已注册 client ID、至少 32 字节的机密和精确 callback URL |
 | `cookieKeys` | 至少 32 字节的稳定机密；当前密钥放在首位 |
@@ -109,7 +113,7 @@ node create-remote-config.mjs /absolute/path/remote.json
 
 修改 `mcpPath` 会改变 OAuth 资源标识。客户端需更新地址并重新连接授权，不能跨路径复用原令牌。服务只提供一个配置的 MCP 路径，不自动添加 `/mcp` 别名或重定向。应用／镜像与配置需配套更新，旧版本会拒绝 `mcpPath` 字段。修改路径时保留已有密钥和 Redis namespace。
 
-仅在本机开发时，HTTP issuer 可以使用字面量 `127.0.0.1` 或 `[::1]`，监听同一个回环地址和端口且不提供 TLS 或可信代理配置。明文 `redis:` URL 也仅允许字面量回环地址。不要将该配置暴露到公网。
+仅在本机开发时，HTTP issuer 可以使用字面量 `127.0.0.1` 或 `[::1]`，监听同一个回环地址和端口且不提供 `tlsTermination`、TLS 或可信代理配置。明文 `redis:` URL 也仅允许字面量回环地址。不要将该配置暴露到公网。
 
 ## 校验与启动
 
@@ -130,7 +134,7 @@ node remote/dist/remote.js --config /absolute/path/remote.json
 | `GET /health/ready` | 启动已完成，Redis 客户端在本机处于 ready 状态 |
 | `mcpPath`（默认 `/mcp`） | 需要认证的 Streamable HTTP MCP resource，提供六个 Crawl 工具 |
 
-健康探测使用issuer对应的Host或字面量IP Host；IP例外仅适用于两个精确健康路径，不授权OAuth／MCP请求。直接探测不带转发头；经代理探测需通过完整的可信对端／HTTPS协议校验。健康检查不会每次查询 Redis，也不证明持久化、Lua 权限、上游可用性或平台授权。未认证的 MCP 路径请求返回 OAuth challenge，不能将它作为 readiness 检查。
+健康探测使用 issuer 对应的 Host 或字面量 IP Host；IP 例外仅适用于两个精确健康路径，不授权 OAuth／MCP 请求。直接探测不带转发头；经代理探测需通过所选入口模式的协议和对端检查。健康检查不会每次查询 Redis，也不证明持久化、Lua 权限、上游可用性或平台授权。未认证的 MCP 路径请求返回 OAuth challenge，不能将它作为 readiness 检查。
 
 ## 容器运行
 
@@ -154,7 +158,7 @@ docker run --rm --user "$(id -u):$(id -g)" --publish 127.0.0.1:8080:8080 \
   nstdata-mcp-remote:local --config /run/secrets/remote.json
 ```
 
-此代理模式示例监听 `0.0.0.0:8080`，仅将宿主回环端口暴露给本机网关；网关还需配置HTTPS及实际可信对端范围，容器内需能访问Redis。应用TLS模式应按配置调整端口映射。以 UID 1000 运行的 Linux 部署需通过其 Secret 挂载、CSI driver 或 init 步骤交付该 UID 可读的文件，同时保持配置和私钥权限为 `0400` 或 `0600`。
+此托管 Ingress 示例监听 `0.0.0.0:8080`，仅将宿主回环端口暴露给本机网关；网关需提供 HTTPS 和规定的转发头，容器内需能访问 Redis。应用 TLS 模式应按配置调整端口映射。以 UID 1000 运行的 Linux 部署需通过其 Secret 挂载、CSI driver 或 init 步骤交付该 UID 可读的文件，同时保持配置和私钥权限为 `0400` 或 `0600`。
 
 ## 发布镜像
 
