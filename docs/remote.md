@@ -145,15 +145,15 @@ This proxy-mode example listens on `0.0.0.0:8080` and publishes only the host lo
 
 Maintainers use `Publish Remote image` (`.github/workflows/release-image.yml`) to publish Linux AMD64 images to an existing registry. This is independent of npm publication and does not deploy a service.
 
-1. Create the registry repository and a dedicated credential with push access limited to that repository. Confirm GitHub-hosted runners can reach the registry. Keep the registry repository private if image downloads must require authentication.
+1. Create the registry repository and a dedicated credential with the minimum push permissions supported by the registry. [Docker Hub PAT permissions](https://docs.docker.com/security/access-tokens/reference/#repository-permissions) apply to every repository the account can access. Confirm GitHub-hosted runners can reach the registry. Keep the registry repository private if image downloads must require authentication.
 2. In GitHub repository **Settings → Environments**, configure `container-production`: require a reviewer, disable administrator bypass, and allow only the `main` branch under **Selected branches and tags**. If the operator must also approve, leave **Prevent self-review** disabled.
-3. Add the following environment configuration:
+3. Add the repository variable under **Settings → Secrets and variables → Actions → Variables**, and add both secrets to the `container-production` environment:
 
 | Kind | Name | Value |
 |---|---|---|
-| Variable | `MCP_IMAGE_REPOSITORY` | Registry hostname, namespace and repository, without a URL scheme, tag or digest |
-| Secret | `MCP_REGISTRY_USERNAME` | Dedicated registry username |
-| Secret | `MCP_REGISTRY_PASSWORD` | Dedicated registry password or push token |
+| Repository variable | `MCP_IMAGE_REPOSITORY` | Registry hostname, namespace and repository, without a URL scheme, tag or digest |
+| Environment secret | `MCP_REGISTRY_USERNAME` | Dedicated registry username |
+| Environment secret | `MCP_REGISTRY_PASSWORD` | Dedicated registry password or push token |
 
 The registry address, source commit, tag and digest may appear in public build logs and summaries. Variables are not secret storage. Do not use this public workflow if those image coordinates must remain confidential; use your private build infrastructure instead. Runtime configuration, Nstdata API keys, Redis/OAuth credentials and cluster access do not belong in this workflow or its image.
 

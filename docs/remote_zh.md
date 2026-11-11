@@ -145,15 +145,15 @@ docker run --rm --user "$(id -u):$(id -g)" --publish 127.0.0.1:8080:8080 \
 
 维护者可使用 `Publish Remote image`（`.github/workflows/release-image.yml`）将 Linux AMD64 镜像发布到已有镜像仓库。该流程独立于 npm 发布，不部署服务。
 
-1. 创建镜像仓库，为专用凭据授予仅限该仓库的推送权限，确认 GitHub 托管 runner 可以访问。若下载镜像需要认证，保持镜像仓库为私有。
+1. 创建镜像仓库，为专用凭据授予该 registry 支持的最小推送权限。[Docker Hub PAT 的权限](https://docs.docker.com/security/access-tokens/reference/#repository-permissions)覆盖该账号可访问的所有仓库。确认 GitHub 托管 runner 可以访问。若下载镜像需要认证，保持镜像仓库为私有。
 2. 在 GitHub 仓库 **Settings → Environments** 配置 `container-production`：要求审核人、禁止管理员绕过，并在 **Selected branches and tags** 中仅允许 `main` 分支。若操作者同时负责批准，保持 **Prevent self-review** 关闭。
-3. 在该环境中添加以下配置：
+3. 在 **Settings → Secrets and variables → Actions → Variables** 添加下方仓库级 Variable；将两个 Secret 添加到 `container-production` 环境：
 
 | 类型 | 名称 | 值 |
 |---|---|---|
-| Variable | `MCP_IMAGE_REPOSITORY` | 镜像仓库域名、命名空间及仓库名，不含 URL 协议、tag 或 digest |
-| Secret | `MCP_REGISTRY_USERNAME` | 专用镜像仓库用户名 |
-| Secret | `MCP_REGISTRY_PASSWORD` | 专用镜像仓库密码或推送 Token |
+| Repository variable | `MCP_IMAGE_REPOSITORY` | 镜像仓库域名、命名空间及仓库名，不含 URL 协议、tag 或 digest |
+| Environment secret | `MCP_REGISTRY_USERNAME` | 专用镜像仓库用户名 |
+| Environment secret | `MCP_REGISTRY_PASSWORD` | 专用镜像仓库密码或推送 Token |
 
 仓库地址、源码提交、tag 和 digest 可能出现在公开构建日志及摘要中，Variable 不用于保密。若镜像地址也必须保密，使用现有私有构建设施，不运行此公开工作流。运行配置、Nstdata API Key、Redis／OAuth 凭据及集群访问凭据不放入工作流或镜像。
 
