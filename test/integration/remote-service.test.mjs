@@ -47,10 +47,11 @@ async function request(url, options = {}) {
     });
 }
 
-test('Remote service starts only after Redis readiness and serves health and OAuth discovery', async t => {
+for (const mcpPath of [undefined, '/crawl']) test(`Remote service starts only after Redis readiness and serves health and OAuth discovery at ${mcpPath ?? '/mcp'}`, async t => {
     const origins = [];
     const redis = await isolatedRedis(t, { allowedOrigins: () => origins });
     const options = config(await port(), redis.socketPath); origins.push(options.issuerUrl);
+    if (mcpPath !== undefined) options.mcpPath = mcpPath;
     const service = await startRemoteService(options);
     t.after(() => service.close());
     assert.equal(service.address.port, options.listen.port);
@@ -65,8 +66,15 @@ test('Remote service starts only after Redis readiness and serves health and OAu
     }
     const discovery = await request(options.issuerUrl + '/.well-known/openid-configuration');
     assert.equal(discovery.status, 200); assert.equal(JSON.parse(discovery.body).issuer, options.issuerUrl);
-    const denied = await request(options.issuerUrl + '/mcp', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+    const canonicalPath = mcpPath ?? '/mcp';
+    const denied = await request(options.issuerUrl + canonicalPath, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
     assert.equal(denied.status, 401); assert.match(denied.headers['www-authenticate'], /Bearer/);
+    assert(denied.headers['www-authenticate'].includes(`resource_metadata="${options.issuerUrl}/.well-known/oauth-protected-resource${canonicalPath}"`));
+    const resourceDiscovery = await request(options.issuerUrl + '/.well-known/oauth-protected-resource' + canonicalPath);
+    assert.equal(resourceDiscovery.status, 200);
+    assert.equal(JSON.parse(resourceDiscovery.body).resource, options.issuerUrl + canonicalPath);
+    const alternate = await request(options.issuerUrl + (canonicalPath === '/mcp' ? '/crawl' : '/mcp'));
+    assert.equal(alternate.status, 404); assert.equal(alternate.headers.location, undefined);
     await service.close(); await service.close(); await service.closed;
     await assert.rejects(request(options.issuerUrl + '/health/live'));
 });
@@ -194,6 +202,7 @@ test('Remote service rejects unsafe direct configuration before opening any conn
             { ...options, issuerUrl: 'http://127.0.0.1:' + (options.listen.port === 65535 ? 65534 : options.listen.port + 1) },
             { ...options, redis: { namespace: options.redis.namespace } },
             { ...options, redis: { namespace: options.redis.namespace, url: 'redis://public.invalid:6379/0' } },
+            ...['/auth', '/crawl/', '/crawl?private=yes', false].map(mcpPath => ({ ...options, mcpPath })),
         ]) await assert.rejects(startRemoteService(input), error => error.message === unavailable);
         assert.equal(connections, 0);
     } finally { net.Socket.prototype.connect = connect; }

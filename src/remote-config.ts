@@ -6,10 +6,11 @@ import { isIP } from 'node:net';
 import { isAbsolute } from 'node:path';
 import { z } from 'zod';
 import type { OAuthFixedClient, OAuthProviderOptions } from './oauth-provider.js';
-import { trustedProxyPeers } from './remote-request.js';
+import { mcpEndpointPath, trustedProxyPeers } from './remote-request.js';
 
 export interface RemoteServiceConfig {
     issuerUrl: string;
+    mcpPath?: string;
     listen: { host: string; port: number; tls?: { keyFile: string; certFile: string } };
     trustedProxyCidrs?: string[];
     redis: { url?: string; socketPath?: string; namespace: string };
@@ -49,6 +50,7 @@ const jwk = z.strictObject({
 });
 const configuration = z.strictObject({
     issuerUrl: z.string().min(1).max(8192),
+    mcpPath: z.string().default('/mcp'),
     listen: z.strictObject({ host: z.string().refine(value => isIP(value) !== 0), port: z.number().int().min(1).max(65535),
         tls: z.strictObject({ keyFile: absoluteFile, certFile: absoluteFile }).optional() }),
     trustedProxyCidrs: z.array(z.string()).min(1).max(32).optional(),
@@ -120,6 +122,7 @@ export function parseRemoteConfig(value: unknown): RemoteServiceConfig {
     try {
         const parsed = configuration.parse(value);
         const issuer = webUrl(parsed.issuerUrl, true);
+        mcpEndpointPath(parsed.mcpPath);
         trustedProxyPeers(parsed.trustedProxyCidrs);
         if (issuer.protocol === 'http:') {
             if (parsed.trustedProxyCidrs || parsed.listen.tls || parsed.listen.host !== issuer.hostname.replace(/^\[|\]$/g, '') ||

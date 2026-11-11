@@ -164,8 +164,15 @@ async function loopbackProbe() {
         }
         const discovery = await request('/.well-known/openid-configuration');
         assert(discovery.status === 200 && JSON.parse(discovery.body).issuer === config.issuerUrl, 'Actual CLI OAuth discovery failed');
-        const denied = await request('/mcp', { method: 'POST', headers: { 'Content-Type': 'application/json' } }, '{}');
+        const resource = config.issuerUrl + config.mcpPath;
+        const denied = await request(config.mcpPath, { method: 'POST', headers: { 'Content-Type': 'application/json' } }, '{}');
         assert(denied.status === 401 && /^Bearer\b/.test(denied.headers['www-authenticate']), 'Actual CLI did not preserve the unauthenticated MCP challenge');
+        const metadataPath = '/.well-known/oauth-protected-resource' + config.mcpPath;
+        assert(denied.headers['www-authenticate'].includes(config.issuerUrl + metadataPath), 'MCP challenge advertised another resource');
+        const protectedResource = await request(metadataPath);
+        assert(protectedResource.status === 200 && JSON.parse(protectedResource.body).resource === resource, 'Actual CLI resource metadata differs from the configured path');
+        const legacy = await request('/mcp', { method: 'POST', headers: { 'Content-Type': 'application/json' } }, '{}');
+        assert(legacy.status === 404 && !legacy.headers.location, 'Custom endpoint exposed an implicit legacy alias');
         let finished = false;
         pending = http.request(config.issuerUrl + '/token', { method: 'POST', agent: false, headers: {
             'Content-Type': 'application/x-www-form-urlencoded', 'Transfer-Encoding': 'chunked', Expect: '100-continue',
@@ -180,7 +187,7 @@ async function loopbackProbe() {
         console.log('shutdown-ready');
         await bounded(pendingClosed, 15000, 'Docker stop did not close the incomplete OAuth request');
         assert(pings === 1 && !fixtureFailure, 'Unexpected Redis startup traffic');
-        console.log(JSON.stringify({ health: true, discovery: true, unauthenticatedMcp: 401, inFlightDockerStop: true,
+        console.log(JSON.stringify({ health: true, discovery: true, mcpPath: config.mcpPath, unauthenticatedMcp: 401, inFlightDockerStop: true,
             redisFixture: 'PING/EVAL-nil only; no Lua or persistence verification', pings, evaluations }));
     } finally {
         pending?.destroy();
@@ -199,7 +206,7 @@ export function writeFixtures(directory) {
         encryptionKeys: { fixture: key() }, currentKeyId: 'fixture', fingerprintKey: key() };
     const write = (name, text) => fs.writeFileSync(path.join(directory, name), text, { mode: 0o600 });
     write('check.json', JSON.stringify(config));
-    write('runtime.json', JSON.stringify({ ...config, redis: { url: 'redis://127.0.0.1:45892/0', namespace: 'container_fixture' } }));
+    write('runtime.json', JSON.stringify({ ...config, mcpPath: '/crawl', redis: { url: 'redis://127.0.0.1:45892/0', namespace: 'container_fixture' } }));
     write('probe.mjs', `await (${loopbackProbe.toString()})();\n`);
     write('no-network.cjs', "require('node:net').Socket.prototype.connect=function(){throw new Error('Configuration check attempted a connection')};globalThis.fetch=async()=>{throw new Error('Configuration check attempted fetch')};\n");
     write('loopback.cjs', `const net=require('node:net');const connect=net.Socket.prototype.connect;net.Socket.prototype.connect=function(...args){const value=Array.isArray(args[0])?args[0][0]:args[0];if(value&&typeof value==='object'&&value.host==='127.0.0.1'&&[45891,45892].includes(Number(value.port)))return connect.apply(this,args);throw new Error('Container probe blocked a non-loopback connection')};const original=globalThis.fetch;globalThis.fetch=(input,init)=>{const url=new URL(typeof input==='string'||input instanceof URL?input:input.url);if(url.protocol!=='http:'||url.hostname!=='127.0.0.1'||![45891,45892].includes(Number(url.port)))throw new Error('Container probe blocked a non-loopback fetch');return original(input,init)};\n`);
@@ -295,7 +302,7 @@ export async function checkContainer(imageName = 'nstdata-mcp-remote:local') {
         assert(finished.State.ExitCode === 0 && finished.State.OOMKilled === false, 'Loopback fixture did not exit cleanly');
         const logs = await docker(['logs', fixture.name], 'Loopback lifecycle result');
         const result = JSON.parse(logs.stdout.trim().split('\n').at(-1));
-        assert(result.health && result.discovery && result.unauthenticatedMcp === 401 && result.inFlightDockerStop, 'Incomplete lifecycle probe result');
+        assert(result.health && result.discovery && result.mcpPath === '/crawl' && result.unauthenticatedMcp === 401 && result.inFlightDockerStop, 'Incomplete lifecycle probe result');
         console.log(`PASS: existing local image ${image.Id}; non-root identity, exact application bytes and production dependency closure, help/check, health/discovery/MCP 401, default-entrypoint PID1 docker stop during an in-flight OAuth request. Shared namespace has no external network; minimal RESP fixture does not verify Redis Lua or persistence.`);
     } finally {
         let cleanupFailure;

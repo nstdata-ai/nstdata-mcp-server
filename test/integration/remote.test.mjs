@@ -12,7 +12,7 @@ const upstream = 'https://remote-integration.invalid';
 const keys = { A: 'synthetic-upstream-A', B: 'synthetic-upstream-B', bad: 'synthetic-rejected', invalid: 'synthetic-malformed', timeout: 'synthetic-timeout', abort: 'synthetic-abort' };
 const keyLabels = new Map(Object.entries(keys).map(([label, value]) => [value, label]));
 
-test('actual Remote consent, OAuth and MCP remain bound to live Redis authorization', { timeout: 20_000 }, async t => {
+for (const mcpPath of ['/mcp', '/crawl']) test(`actual Remote consent, OAuth and MCP remain bound to live Redis authorization at ${mcpPath}`, { timeout: 20_000 }, async t => {
     let origin, application, startedAbort;
     const origins = [], extraHosts = [];
     const abortStarted = new Promise(resolve => { startedAbort = resolve; });
@@ -44,7 +44,8 @@ test('actual Remote consent, OAuth and MCP remain bound to live Redis authorizat
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     origin = `http://127.0.0.1:${server.address().port}`;
     origins.push(origin);
-    const resource = `${origin}/mcp`, clients = ['A', 'B'].map(label => ({ clientId: `client-${label}`, name: label === 'A' ? 'Client <A> & Team' : 'Client B', clientSecret: `synthetic-confidential-client-secret-${label}`, redirectUris: [`${origin}/callback/${label}`] }));
+    const resource = `${origin}${mcpPath}`, alternatePath = mcpPath === '/mcp' ? '/crawl' : '/mcp';
+    const clients = ['A', 'B'].map(label => ({ clientId: `client-${label}`, name: label === 'A' ? 'Client <A> & Team' : 'Client B', clientSecret: `synthetic-confidential-client-secret-${label}`, redirectUris: [`${origin}/callback/${label}`] }));
     clients.push({ clientId: 'client-form-post', clientSecret: 'synthetic-confidential-form-post-secret', redirectUris: ['https://configured-callback.invalid/oauth/callback'] });
     const authorizations = [], grantWrites = new Set(), mcpClients = [];
     t.after(async () => {
@@ -149,8 +150,21 @@ test('actual Remote consent, OAuth and MCP remain bound to live Redis authorizat
         const before = snapshot(), response = await fetch(resource, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) });
         const metadataUrl = response.headers.get('www-authenticate')?.match(/resource_metadata="([^"]+)"/)?.[1];
         await response.arrayBuffer(); assert.equal(response.status, 401); assert(metadataUrl);
+        assert.equal(metadataUrl, `${origin}/.well-known/oauth-protected-resource${mcpPath}`);
         const protectedMetadata = await (await fetch(metadataUrl)).json();
         assert(protectedMetadata.resource === resource && JSON.stringify(protectedMetadata.authorization_servers) === JSON.stringify([origin]));
+        assert.deepEqual(snapshot(), before);
+    });
+    await t.test('only the canonical MCP path and its resource discovery are available', async () => {
+        const before = snapshot();
+        for (const pathname of [alternatePath, `${mcpPath}/`, `/.well-known/oauth-protected-resource${alternatePath}`]) {
+            for (const method of ['GET', 'POST']) {
+                const response = await fetch(origin + pathname, { method, redirect: 'manual' });
+                await response.arrayBuffer();
+                assert.equal(response.status, 404, `${method} ${pathname}`);
+                assert.equal(response.headers.has('location'), false);
+            }
+        }
         assert.deepEqual(snapshot(), before);
     });
     await t.test('two actual authorize/form/PKCE flows isolate fixed clients and MCP upstream credentials', async () => {
@@ -169,6 +183,24 @@ test('actual Remote consent, OAuth and MCP remain bound to live Redis authorizat
         const responses = await Promise.all(connected.map((client, index) => client.callTool({ name: 'nstdata_crawl_status', arguments: { crawlId: `existing-${index ? 'B' : 'A'}` } })));
         assert(responses[0].structuredContent?.pending === 1 && responses[1].structuredContent?.pending === 2);
         assert.deepEqual(business.sort(), ['A', 'B']);
+    });
+    await t.test('an issued access token cannot authorize a different canonical resource path', async () => {
+        const previous = application;
+        const migrated = createRemoteHandler({ ...handlerOptions, resourceUrl: origin + alternatePath });
+        const before = snapshot(), beforeBusiness = business.length;
+        application = migrated;
+        try {
+            const response = await fetch(origin + alternatePath, { method: 'POST', headers: {
+                authorization: `Bearer ${a.token.access_token}`, 'content-type': 'application/json',
+                accept: 'application/json, text/event-stream',
+            }, body: JSON.stringify({ jsonrpc: '2.0', id: 77, method: 'tools/list' }) });
+            assert.equal(response.status, 401);
+            assert.match(response.headers.get('www-authenticate'), /error="invalid_token"/);
+            assert(response.headers.get('www-authenticate').includes(`resource_metadata="${origin}/.well-known/oauth-protected-resource${alternatePath}"`));
+            await response.arrayBuffer();
+            assert.equal(business.length, beforeBusiness);
+            assert.deepEqual(snapshot(), before);
+        } finally { application = previous; await migrated.close(); }
     });
     await t.test('unsupported OAuth scope is denied before key validation or authorization writes', async () => {
         const before = snapshot(), page = browser(), response = await page.fetch(`${metadata.authorization_endpoint}?${new URLSearchParams({ client_id: clients[0].clientId, redirect_uri: clients[0].redirectUris[0], response_type: 'code', scope: 'proxy:use', resource, state: 'unsupported-scope', code_challenge_method: 'S256', code_challenge: createHash('sha256').update(randomBytes(32)).digest('base64url') })}`);
@@ -254,9 +286,9 @@ test('actual Remote consent, OAuth and MCP remain bound to live Redis authorizat
         const nativeActualCredentials = createRedisCredentialStore({ ...nativeStore, encryptionKeys: { fixture: randomBytes(32) }, currentKeyId: 'fixture', fingerprintKey: randomBytes(32) });
         const nativeCredentials = { ...nativeActualCredentials, async authorize(token) { const binding = await nativeActualCredentials.authorize(token); authorizations.push(binding); return binding; } };
         const nativeClient = { ...clients[0], redirectUris: [`${nativeOrigin}/callback/A`] };
-        host.application = createRemoteHandler({ ...handlerOptions, issuerUrl: nativeOrigin, resourceUrl: `${nativeOrigin}/mcp`, clients: [nativeClient], store: nativeStore, credentials: nativeCredentials, allowedOrigins: [nativeOrigin], requestTimeoutMs: 150 });
+        host.application = createRemoteHandler({ ...handlerOptions, issuerUrl: nativeOrigin, resourceUrl: `${nativeOrigin}${mcpPath}`, clients: [nativeClient], store: nativeStore, credentials: nativeCredentials, allowedOrigins: [nativeOrigin], requestTimeoutMs: 150 });
         const nativeMetadata = await (await fetch(`${nativeOrigin}/.well-known/openid-configuration`)).json();
-        const target = { origin: nativeOrigin, resource: `${nativeOrigin}/mcp`, metadata: nativeMetadata };
+        const target = { origin: nativeOrigin, resource: `${nativeOrigin}${mcpPath}`, metadata: nativeMetadata };
         const granted = await authorize('A', nativeClient, undefined, undefined, target);
         let token = granted.token;
         for (const mode of ['oversize', 'timeout', 'disconnect', 'close']) {

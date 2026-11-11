@@ -42,6 +42,7 @@ test('Remote configuration decodes deployment keys, copies data and adds no glob
     const result = parseRemoteConfig(input);
     assert.deepEqual(input, before);
     assert.equal(result.issuerUrl, input.issuerUrl);
+    assert.equal(result.mcpPath, '/mcp');
     assert.deepEqual(result.allowedOrigins, []);
     assert.deepEqual(Buffer.from(result.encryptionKeys.current), Buffer.from(encodedEncryption, 'base64url'));
     assert.deepEqual(Buffer.from(result.fingerprintKey), Buffer.from(encodedFingerprint, 'base64url'));
@@ -49,6 +50,26 @@ test('Remote configuration decodes deployment keys, copies data and adds no glob
     input.clients[0].clientSecret = 'changed'; input.jwks.keys[0].d = 'changed';
     assert.notEqual(result.clients[0].clientSecret, 'changed');
     assert.notEqual(result.jwks.keys[0].d, 'changed');
+});
+
+test('Remote configuration accepts a canonical MCP path without changing its issuer', () => {
+    for (const mcpPath of ['/a', '/crawl', '/crawl-v2', '/' + 'a'.repeat(127)]) {
+        const input = fixture(); input.mcpPath = mcpPath;
+        const result = parseRemoteConfig(input);
+        assert.equal(result.mcpPath, mcpPath);
+        assert.equal(result.issuerUrl, input.issuerUrl);
+        assert.equal(input.mcpPath, mcpPath);
+    }
+});
+
+test('Remote configuration rejects ambiguous MCP paths and reserved service routes', () => {
+    for (const mcpPath of [null, false, 1, [], {}, '', '/', 'crawl', '//crawl', '/crawl/', '/crawl/mcp',
+        '/Crawl', '/1crawl', '/-crawl', '/crawl-', '/crawl.', '/crawl?private=yes', '/crawl#private',
+        '/%63rawl', '/crawl\\path', '/crawl\n', '/' + 'a'.repeat(128),
+        '/auth', '/backchannel', '/device', '/session', '/token', '/jwks', '/request', '/reg', '/me',
+        '/oauth', '/health', '/.well-known']) {
+        invalid(input => { input.mcpPath = mcpPath; });
+    }
 });
 
 test('Remote configuration accepts explicit loopback development and local Unix Redis', () => {

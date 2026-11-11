@@ -10,7 +10,7 @@ import { createClient } from '@redis/client';
 import type { RemoteServiceConfig } from './remote-config.js';
 import { createApiKeyVerifier } from './api-key-verifier.js';
 import { createRemoteHandler, type RemoteHandler } from './remote-handler.js';
-import { createRemoteRequestPolicy } from './remote-request.js';
+import { createRemoteRequestPolicy, mcpEndpointPath } from './remote-request.js';
 import { createRedisCredentialStore } from './redis/credential-store.js';
 import { limitRedisCommands, RedisStoreError } from './redis/shared.js';
 
@@ -127,6 +127,7 @@ export async function startRemoteService(input: RemoteServiceConfig): Promise<Re
     try {
         const config = structuredClone(input);
         const issuer = new URL(config.issuerUrl);
+        const resourceUrl = new URL(mcpEndpointPath(config.mcpPath), issuer).href;
         if (config.issuerUrl !== issuer.origin || !isIP(config.listen.host) ||
             !Number.isSafeInteger(config.listen.port) || config.listen.port < 1 || config.listen.port > 65535 ||
             Boolean(config.redis.url) === Boolean(config.redis.socketPath)) throw new Error();
@@ -156,7 +157,7 @@ export async function startRemoteService(input: RemoteServiceConfig): Promise<Re
         const store = { command, namespace: config.redis.namespace, maxTtlSeconds: 2_592_000 };
         const credentials = createRedisCredentialStore({ ...store, encryptionKeys: config.encryptionKeys,
             currentKeyId: config.currentKeyId, fingerprintKey: config.fingerprintKey });
-        handler = createRemoteHandler({ issuerUrl: config.issuerUrl, resourceUrl: new URL('/mcp', issuer).href,
+        handler = createRemoteHandler({ issuerUrl: config.issuerUrl, resourceUrl,
             clients: config.clients, cookieKeys: config.cookieKeys, jwks: config.jwks, store, credentials,
             verifyApiKey: createApiKeyVerifier(), allowedOrigins: config.allowedOrigins, trustedProxyCidrs: config.trustedProxyCidrs });
         await deadline((async () => {
