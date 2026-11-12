@@ -2,13 +2,13 @@
 
 [English](README.md)
 
-通过 MCP 客户端使用 Nstdata Crawl 和 HTTP／HTTPS 代理。客户端启动本地 stdio 进程，无需另行部署 MCP 后台。
+通过 MCP 客户端使用 Nstdata Crawl 和 HTTP／HTTPS 代理。
 
-接入或自托管 HTTPS 入口请阅读 [Remote MCP](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/docs/remote_zh.md)。npm 包提供本地 stdio 服务。
+使用 [Remote MCP](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/docs/remote_zh.md) 的 `https://mcp.nstdata.io/crawl` 地址，通过 OAuth 接入托管 Crawl，无需在本机安装 Node.js 或 `npx`。下方本地 stdio 配置提供 Crawl 和 HTTP／HTTPS Proxy 工具。
 
 ## 接入
 
-需要 Node.js 22（22.18及以上）或24，并能从 PATH 找到 `npx`。从 [Nstdata 控制台](https://app.nstdata.io/)获取 Crawl API Key，选择对应客户端的配置格式；无需先安装到 Node.js 项目。
+本地 stdio 需要 Node.js 22（22.18及以上）或24，并能从 PATH 找到 `npx`。从 [Nstdata 控制台](https://app.nstdata.io/)获取 Crawl API Key，选择对应客户端的配置格式；无需先安装到 Node.js 项目。
 
 | 客户端 | 接入方式 |
 |---|---|

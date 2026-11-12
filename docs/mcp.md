@@ -2,6 +2,8 @@
 
 [中文](mcp_zh.md) · [Quick start](../README.md)
 
+For hosted Crawl over Streamable HTTP without local Node.js or `npx`, see [Remote MCP](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/docs/remote.md). Proxy tools use the local stdio setup below.
+
 ## Client setup
 
 Requires Node.js 22 (22.18 or later) or 24, with `npx` on PATH. Get a Crawl API key from the [Nstdata dashboard](https://app.nstdata.io/). The direct configurations below pin the local stdio package; optional marketplace plugins use the release pinned in their manifests. No project installation is required.

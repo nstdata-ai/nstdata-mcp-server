@@ -2,6 +2,8 @@
 
 [English](mcp.md) · [快速开始](../README_zh.md)
 
+通过 Streamable HTTP 接入托管 Crawl 无需本机 Node.js 或 `npx`，详见 [Remote MCP](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/docs/remote_zh.md)。Proxy 工具使用下方本地 stdio 配置。
+
 ## 客户端接入
 
 需要 Node.js 22（22.18及以上）或24，且 `npx` 位于 PATH。先从 [Nstdata 控制台](https://app.nstdata.io/)取得 Crawl API Key。以下直接配置固定本地 stdio 包版本；可选市场插件使用各自清单中固定的版本。无需先安装项目依赖。

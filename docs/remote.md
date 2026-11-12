@@ -6,29 +6,31 @@ Use the six Nstdata Crawl tools through a Streamable HTTP endpoint. Each user su
 
 ## Connect a client
 
-Use the HTTPS MCP URL supplied by the service operator, for example `https://mcp.example.com/crawl`.
+Connect to `https://mcp.nstdata.io/crawl` using a Streamable HTTP MCP client. No local Node.js, `npx` or npm package installation is required. Prefer OAuth when your client supports browser authorization; API key access is available for advanced clients and programs. For a self-hosted deployment, use the URL supplied by its operator instead.
 
 | Authentication | Suitable for | Configuration |
 |---|---|---|
 | OAuth | Clients that support browser authorization | MCP URL; the client discovers and registers itself automatically |
-| API key | Clients and programs that can set request headers | The same MCP URL and an `X-API-Key` header containing your Nstdata API key |
+| API key (advanced) | Clients and programs that can set request headers | The same MCP URL and an `X-API-Key` header containing your Nstdata API key |
 
 For OAuth:
 
-1. Add the URL as a Streamable HTTP MCP server and choose OAuth if the client asks for an authentication method.
+1. Add the URL as a Streamable HTTP MCP server and choose OAuth if the client asks for an authentication method. Leave any manual bearer token, bearer token environment variable, and authentication header fields empty.
 2. Open the authorization link, check the requesting application, and enter your API key from the [Nstdata dashboard](https://app.nstdata.io/).
-3. Select **Authorize Crawl**, return to the client, and confirm that the six `nstdata_crawl_*` tools are available.
+3. Select **Authorize**, return to the client, and confirm that the six `nstdata_crawl_*` tools are available.
 
 The authorization page verifies your API key and asks for consent; it does not sign you into a Nstdata account. The application can renew the granted access until it expires or is revoked. Adding another device requires no server configuration or restart. Client interfaces and organization policies may differ; the client must support the selected authentication method.
+
+See the [tool reference](mcp.md#tool-reference) and [workflows](mcp.md#workflows) for scraping, task resumption and reference reading.
 
 ### API key access
 
 Configure one `X-API-Key` header in the client's protected settings. `Authorization: Bearer` is reserved for OAuth access tokens; do not put a business API key there or send both credentials. Do not put credentials in URLs or share them in logs.
 
-To check tool discovery from a Linux/macOS terminal, set `NSTDATA_API_TOKEN` in your local environment, replace the example URL, and run:
+To check tool discovery from a Linux/macOS terminal, set `NSTDATA_API_TOKEN` in your local environment and run:
 
 ```sh
-NSTDATA_MCP_URL='https://mcp.example.com/crawl'
+NSTDATA_MCP_URL='https://mcp.nstdata.io/crawl'
 curl --fail-with-body --silent --show-error --max-time 15 \
   --request POST "$NSTDATA_MCP_URL" \
   --header "X-API-Key: ${NSTDATA_API_TOKEN:?Set NSTDATA_API_TOKEN}" \
