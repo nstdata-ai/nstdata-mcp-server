@@ -15,7 +15,7 @@ const upstream = 'https://automatic-onboarding.invalid';
 const keys = { A: 'synthetic-automatic-key-A', B: 'synthetic-automatic-key-B', rejected: 'synthetic-rejected-key' };
 
 test('automatic Remote onboarding uses public OAuth clients and independent per-request API keys', { timeout: 30_000 }, async t => {
-    const origins = [], verifiedKeys = [], business = [], authorizations = [], connected = [];
+    const origins = [], verifiedKeys = [], business = [], authorizations = [], connected = [], grantWrites = new Set();
     let application, unavailable = false;
     const redis = await isolatedRedis(t, { allowedOrigins: () => origins, virtualFetch: async (request, url) => {
         if (url.origin !== upstream) return undefined;
@@ -36,7 +36,10 @@ test('automatic Remote onboarding uses public OAuth clients and independent per-
     const origin = `http://127.0.0.1:${server.address().port}`;
     origins.push(origin);
     const resource = `${origin}/crawl`;
-    const store = { namespace: `automatic_${randomBytes(8).toString('hex')}`, maxTtlSeconds: 600, command: redis.command };
+    const store = { namespace: `automatic_${randomBytes(8).toString('hex')}`, maxTtlSeconds: 600, command: async args => {
+        if (args[0] === 'EVAL' && args[1].includes("redis.call('HSET', key, 'payload'") && args[3].includes(':record:R3JhbnQ:')) grantWrites.add(args[3]);
+        return redis.command(args);
+    } };
     const fingerprintKey = randomBytes(32);
     const actualCredentials = createRedisCredentialStore({ ...store, encryptionKeys: { fixture: randomBytes(32) }, currentKeyId: 'fixture', fingerprintKey });
     const credentials = { ...actualCredentials, async authorize(key) {
@@ -133,6 +136,32 @@ test('automatic Remote onboarding uses public OAuth clients and independent per-
     }
     const exchange = (flow, change = {}) => token({ client_id: flow.client.client_id, grant_type: 'authorization_code', code: flow.code,
         code_verifier: flow.verifier, redirect_uri: flow.redirect, resource, ...change });
+    async function ipv6Callback(page, response, flow) {
+        for (let budget = 0; budget < 6; budget++) {
+            if (response.status === 200) {
+                assert.equal(response.headers.get('location'), null);
+                assert.match(response.headers.get('content-type'), /^text\/html/);
+                const csp = response.headers.get('content-security-policy');
+                assert.equal(csp.split(';').map(value => value.trim()).find(value => value.startsWith('form-action ')), "form-action 'self'");
+                assert.doesNotMatch(csp, /\[::1\]/);
+                const html = await response.text(); noKey(html);
+                const target = /<meta http-equiv="refresh" content="0;url=([^"]+)">/.exec(html)?.[1];
+                assert(target, 'the final IPv6 response provides a meta-refresh bridge');
+                assert(target.includes('&amp;'), 'query separators are HTML-escaped');
+                const callback = new URL(target.replaceAll('&amp;', '&'));
+                assert.equal(callback.origin, new URL(flow.redirect).origin);
+                assert.equal(callback.pathname, new URL(flow.redirect).pathname);
+                assert.equal(callback.searchParams.get('state'), flow.state);
+                assert.equal(callback.searchParams.get('iss'), origin);
+                return callback;
+            }
+            assert([302, 303].includes(response.status), `IPv6 authorization redirect status=${response.status}`);
+            const next = new URL(response.headers.get('location'), origin);
+            assert.equal(next.origin, origin, 'an IPv6 callback must use the HTML bridge instead of an external HTTP redirect');
+            response = await page.fetch(next);
+        }
+        assert.fail('IPv6 authorization exceeded its redirect bound');
+    }
     async function connect(headers) {
         const client = new Client({ name: 'automatic-onboarding-fixture', version: '1.0.0' }, { versionNegotiation: { mode: { pin: '2026-07-28' } } });
         connected.push(client);
@@ -269,6 +298,72 @@ test('automatic Remote onboarding uses public OAuth clients and independent per-
             noKey(await response.text());
         }
         assert.equal(authorizations.length, before);
+    });
+    const ipv6Redirect = 'http://[::1]:65431/callback/ipv6';
+    let ipv6Client;
+    await t.test('IPv6 DCR callback completes query authorization through an HTML bridge and PKCE exchange', async () => {
+        const registered = await register({ ...publicClient('IPv6'), redirect_uris: [ipv6Redirect] });
+        assert.equal(registered.status, 201, registered.payload.error);
+        ipv6Client = registered.payload;
+        assert.deepEqual(ipv6Client.redirect_uris, [ipv6Redirect]);
+        const page = browser(), flow = { ...authorizationUrl(ipv6Client, { redirect_uri: ipv6Redirect }), redirect: ipv6Redirect };
+        let response = await page.fetch(flow.url);
+        const interaction = new URL(response.headers.get('location'), origin);
+        assert.equal(interaction.origin, origin);
+        assert.match(interaction.pathname, /^\/oauth\/interaction\//);
+        response = await page.fetch(interaction);
+        assert.equal(response.status, 200);
+        assert.match(response.headers.get('content-security-policy'), /form-action 'self';/);
+        assert.doesNotMatch(response.headers.get('content-security-policy'), /\[::1\]/);
+        const html = await response.text(); noKey(html);
+        assert(html.includes(new URL(ipv6Redirect).origin), 'consent displays the validated IPv6 callback origin');
+        const csrf = /name="csrf" value="([^"]+)"/.exec(html)?.[1]; assert(csrf);
+        const before = [verifiedKeys.length, authorizations.length, grantWrites.size];
+        response = await page.fetch(interaction, { method: 'POST', headers: { origin, 'content-type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({ csrf, apiToken: keys.A, decision: 'allow' }) });
+        const callback = await ipv6Callback(page, response, flow);
+        assert.equal(callback.searchParams.get('error'), null);
+        assert(callback.searchParams.get('code'));
+        assert.deepEqual([verifiedKeys.length, authorizations.length, grantWrites.size], before.map(value => value + 1));
+        const exchanged = await exchange({ ...flow, code: callback.searchParams.get('code') });
+        assert.equal(exchanged.status, 200, exchanged.payload.error);
+        assert(exchanged.payload.access_token);
+    });
+    await t.test('IPv6 cancellation bridges the error without key verification or credential and Grant writes', async () => {
+        const before = [verifiedKeys.length, authorizations.length, grantWrites.size];
+        const page = browser(), flow = { ...authorizationUrl(ipv6Client, { redirect_uri: ipv6Redirect }), redirect: ipv6Redirect };
+        let response = await page.fetch(flow.url);
+        const interaction = new URL(response.headers.get('location'), origin);
+        assert.equal(interaction.origin, origin);
+        response = await page.fetch(interaction);
+        assert.equal(response.status, 200);
+        const html = await response.text(); noKey(html);
+        const csrf = /name="csrf" value="([^"]+)"/.exec(html)?.[1]; assert(csrf);
+        response = await page.fetch(interaction, { method: 'POST', headers: { origin, 'content-type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({ csrf, apiToken: keys.A, decision: 'deny' }) });
+        const callback = await ipv6Callback(page, response, flow);
+        assert.equal(callback.searchParams.get('error'), 'access_denied');
+        assert.equal(callback.searchParams.get('code'), null);
+        assert.deepEqual([verifiedKeys.length, authorizations.length, grantWrites.size], before);
+    });
+    await t.test('IPv6 form_post and unregistered callback paths fail before consent or authorization writes', async () => {
+        const before = [verifiedKeys.length, authorizations.length, grantWrites.size];
+        for (const parameters of [{}, { prompt: 'none' }]) {
+            const url = authorizationUrl(ipv6Client, { redirect_uri: ipv6Redirect, response_mode: 'form_post', ...parameters }).url;
+            const response = await browser().fetch(url);
+            assert.equal(response.status, 400, `form_post with prompt=${parameters.prompt ?? 'default'} must fail at the authorization endpoint`);
+            assert.equal(response.headers.get('location'), null);
+            assert.match(response.headers.get('content-type'), /^text\/html/);
+            const html = await response.text(); noKey(html);
+            assert.match(html, /Unsupported callback mode/);
+            assert.doesNotMatch(html, /<form\b|name="apiToken"/);
+            assert.deepEqual([verifiedKeys.length, authorizations.length, grantWrites.size], before);
+        }
+        const response = await browser().fetch(authorizationUrl(ipv6Client, { redirect_uri: 'http://[::1]:65431/unregistered' }).url);
+        assert(response.status >= 400 && response.status < 500);
+        assert.equal(response.headers.get('location'), null, 'unregistered IPv6 callbacks cannot redirect or reach consent');
+        noKey(await response.text());
+        assert.deepEqual([verifiedKeys.length, authorizations.length, grantWrites.size], before);
     });
     await t.test('CIMD completes real provider consent, token and MCP with a synthetic HTTPS metadata transport', async () => {
         const metadataClient = { ...publicClient('C'), client_id: 'https://fixture-client.example/client.json' };

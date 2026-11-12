@@ -48,6 +48,7 @@ Remote is a separate application built from this repository. It is not included 
 - Node.js 22.18+ in the 22.x line, or Node.js 24.11+ in the 24.x LTS line, and a stable public HTTPS origin. The certificate can be managed by an existing gateway or loaded by this application.
 - Standalone Redis with persistent storage, `noeviction`, an isolated namespace and the adapter's required key/Lua permissions. Use verified TLS (`rediss:`) or a protected local Unix socket; Cluster and Sentinel are not supported.
 - Public clients use authorization code with S256 PKCE. The server accepts Client ID Metadata Documents (CIMD) and dynamic client registration (DCR); pre-registered confidential clients remain optional. No per-device client secret is required.
+- IPv6 callback URLs use a browser return page and support query responses. `form_post` with an IPv6 callback is rejected before consent; use a query response or an IPv4 or HTTPS hostname callback.
 
 ## HTTPS ingress modes
 
