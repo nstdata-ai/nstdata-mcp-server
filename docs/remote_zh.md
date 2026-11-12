@@ -1,16 +1,53 @@
-# 自托管 Remote MCP
+# Remote MCP
 
-[English](remote.md) · [本地客户端接入](../README_zh.md)
+[English](remote.md) · [本地客户端接入](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/README_zh.md)
 
-通过 HTTPS MCP 入口提供 Crawl 工具，并使用逐用户 OAuth 授权。用户在同意页输入自己的现有 Nstdata API Key，调用消耗该用户额度；不要为此服务配置共享的 `NSTDATA_API_TOKEN`。Proxy 工具继续使用独立的本地 stdio 配置。
+通过 Streamable HTTP 入口使用六个 Nstdata Crawl 工具。每位用户提供自己的 Nstdata API Key，Crawl 调用使用该用户的权限和额度。Proxy 工具使用[本地 stdio 服务](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/README_zh.md)。
 
-Remote 是从本仓库构建的独立应用，不包含在本地 `@nstdata-ai/mcp-server` npm 包中；npm 包的安装和客户端配置保持不变。
+## 客户端接入
 
-## 部署条件
+使用服务维护者提供的 HTTPS MCP 地址，例如 `https://mcp.example.com/crawl`。
 
-- Node.js 22 系列的 22.18+ 或 Node.js 24，以及稳定的公网 HTTPS origin。证书可由现有网关统一管理，或由应用直接加载。
+| 认证方式 | 适用场景 | 配置 |
+|---|---|---|
+| OAuth | 支持浏览器授权的客户端 | 填写 MCP 地址，客户端自动发现并完成客户端注册 |
+| API Key | 支持设置请求头的客户端或程序 | 填写同一 MCP 地址，并将自己的 Nstdata API Key 配置为 `X-API-Key` 请求头 |
+
+使用 OAuth：
+
+1. 将地址添加为 Streamable HTTP MCP 服务；若客户端询问认证方式，选择 OAuth。
+2. 打开授权链接，核对请求授权的应用，输入从 [Nstdata 控制台](https://app.nstdata.io/)获取的 API Key。
+3. 点击 **Authorize Crawl**，返回客户端，确认可以发现六个 `nstdata_crawl_*` 工具。
+
+授权页校验 API Key 并征求同意，不执行 Nstdata 账户登录。应用可在授权到期或被撤销前续期访问。新增设备不需要修改服务器配置或重启服务。各客户端的界面和组织策略可能不同，需支持所选认证方式。
+
+### API Key 接入
+
+在客户端受保护的配置中设置一个 `X-API-Key` 请求头。`Authorization: Bearer` 仅用于 OAuth access token，不要在其中填写业务 API Key，也不要同时发送两种凭据。不要把凭据放在 URL 或日志中。
+
+需要在 Linux／macOS 终端检查工具发现时，在本地环境中设置 `NSTDATA_API_TOKEN`，替换示例地址后执行：
+
+```sh
+NSTDATA_MCP_URL='https://mcp.example.com/crawl'
+curl --fail-with-body --silent --show-error --max-time 15 \
+  --request POST "$NSTDATA_MCP_URL" \
+  --header "X-API-Key: ${NSTDATA_API_TOKEN:?Set NSTDATA_API_TOKEN}" \
+  --header 'Content-Type: application/json' \
+  --header 'Accept: application/json, text/event-stream' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+响应列出六个 Crawl 工具，不创建抓取任务。不要将 Key 写入 shell 历史，并关闭命令跟踪。凭据无效时返回 `401`，凭据冲突时返回 `400`；验证接口或存储不可用时返回 `503`，不会自动切换另一种认证方式。
+
+API Key 请求逐次校验 Key，不创建 OAuth 授权。撤销 OAuth 授权不会撤销 Nstdata API Key；撤销业务 Key 后，上游会拒绝 Crawl 调用，但不会立即使所有已签发 OAuth token 失效。重新连接时保留任务 ID，不要重提提交状态未知的任务。
+
+## 自托管条件
+
+Remote 是从本仓库构建的独立应用，不包含在本地 `@nstdata-ai/mcp-server` npm 包中；本地安装和客户端配置保持不变。不要为此服务设置共享的 `NSTDATA_API_TOKEN`。
+
+- Node.js 22 系列的 22.18+ 或 Node.js 24 LTS 系列的 24.11+，以及稳定的公网 HTTPS origin。证书可由现有网关统一管理，或由应用直接加载。
 - 采用持久化、`noeviction`、独立命名空间的单机 Redis，并授予 adapter 所需的键／Lua 权限。使用验证证书的 TLS（`rediss:`）或受保护的本地 Unix socket；不支持 Cluster、Sentinel。
-- 在目标平台配置固定 OAuth client ID、机密和精确 callback URL。服务要求 `client_secret_basic` 和 S256 PKCE，不开放动态客户端注册。
+- 公共客户端使用 authorization code 和 S256 PKCE。服务支持 Client ID Metadata Documents（CIMD）及动态客户端注册（DCR），预登记 confidential 客户端为可选方式，不需要逐设备分发 client secret。
 
 ## HTTPS 入口方式
 
@@ -61,10 +98,7 @@ const config = {
     url: 'rediss://USER:PASSWORD@redis.example.com:6379/0',
     namespace: 'production'
   },
-  clients: [{
-    clientId: 'platform-client', clientSecret: secret(), name: 'Configured platform',
-    redirectUris: ['https://client.example.com/oauth/callback']
-  }],
+  clients: [],
   cookieKeys: [secret()],
   jwks: { keys: [{
     ...privateKey.export({ format: 'jwk' }), kid: 'signing-1', use: 'sig', alg: 'RS256'
@@ -82,7 +116,7 @@ console.log('Remote configuration created.');
 node create-remote-config.mjs /absolute/path/remote.json
 ```
 
-程序拒绝覆盖现有文件，也不打印机密。编辑受保护的 JSON，填写实际 issuer、监听端口、已编码的 Redis 凭据、client ID 和精确 callback。示例使用托管 Ingress；需要 IP 限制时，用实际 `trustedProxyCidrs` 替换 `tlsTermination`；采用应用 TLS 时，移除它并填写 `listen.tls` 的证书／私钥路径。只将对应的 `clientSecret` 复制到平台受保护的 OAuth 配置中，不要在每次重启时重新生成密钥。已有配置保留原行为，只有显式选择新模式才会变化；应用／镜像需支持该模式。
+程序拒绝覆盖现有文件，也不打印机密。编辑受保护的 JSON，填写实际 issuer、监听端口和已编码的 Redis 凭据。`clients` 为空时无需静态客户端凭据即可自动接入。只有平台明确要求预登记 confidential 客户端时，才一次性添加匹配的 client ID、机密和精确 callback URL。示例使用托管 Ingress；仅在部署需要其他入口方式时改用 `trustedProxyCidrs` 或应用 TLS。不要在每次重启时重新生成密钥。
 
 | 字段 | 配置规则 |
 |---|---|
@@ -92,12 +126,18 @@ node create-remote-config.mjs /absolute/path/remote.json
 | `tlsTermination` | 设为 `"ingress"`，信任平台托管的 HTTPS 入口和内部 HTTP 后端；与 `trustedProxyCidrs`、`listen.tls` 互斥 |
 | `trustedProxyCidrs` | 可选的直接对端 IP／CIDR 限制方式；与 `tlsTermination`、`listen.tls` 互斥 |
 | `redis` | `url` 或绝对 `socketPath` 二选一；不同环境使用独立 namespace |
-| `clients` | 已注册 client ID、至少 32 字节的机密和精确 callback URL |
+| `clients` | 可选的预登记 confidential 客户端；自动接入使用 `[]`。静态项包含 ID、至少 32 字节的机密和精确 callback URL |
 | `cookieKeys` | 至少 32 字节的稳定机密；当前密钥放在首位 |
 | `jwks.keys` | 带唯一 `kid`、`use: "sig"` 及匹配算法的私有签名 JWK |
 | `encryptionKeys`、`currentKeyId` | 带 ID 的 32 字节 base64url 加密密钥及当前密钥 ID |
 | `fingerprintKey` | 独立、稳定的 32 字节 base64url 密钥；变更需新建 namespace |
 | `allowedOrigins` | 可选的精确浏览器 origin，不支持通配符；非浏览器请求可不带 Origin |
+
+### OAuth 客户端策略
+
+自动接入不需要在 `clients` 中添加客户端，可省略此字段或设为 `[]`。CIMD 客户端通过公网 HTTPS URL 提供元数据，端口为 443，地址不含查询参数或 fragment。元数据请求拒绝私网地址和重定向，并限制时间、响应大小和并发。
+
+使用 DCR 的客户端每个 Redis namespace 最多每分钟注册 30 次、保存 10,000 个客户端。注册记录在服务重启后保留；连续 30 天 5 分钟未被查询时到期，查询会续期，到期记录自动释放容量。开放大量客户端前，应监控注册失败和存储容量。既有静态客户端继续使用 `client_secret_basic` 和 S256 PKCE，公共客户端使用 `none` 和 S256 PKCE。
 
 要使用 `https://mcp.example.com/crawl`，在现有配置中添加下列字段；这不是完整配置文件：
 
@@ -182,12 +222,12 @@ docker run --rm --user "$(id -u):$(id -g)" --publish 127.0.0.1:8080:8080 \
 
 推送失败或被中断时，先核对镜像仓库，再决定是否重新触发。推送成功但 digest 记录失败时，镜像可能已经发布，不要为补取 digest 重复发布。工作流不在验证后重新构建，不重试发布或轮询公开可见性；无需 npm Token、Kubernetes 凭据或部署权限。
 
-## 平台接入与运维
+## 服务运维
 
-在目标平台填写部署后的 MCP URL（`issuerUrl` 加 `mcpPath`，默认路径为 `/mcp`）及匹配的固定客户端凭据。使用服务公布的 OAuth discovery metadata，不猜测授权／令牌路径。请求 `crawl:use`，访问续期受已授予的授权约束。开放普通用户访问前，需在实际平台验证授权、工具发现及一次有界调用。
+网关需转发 MCP resource 及发现文档公布的发现、授权、令牌和注册端点，客户端自动发现这些端点。开放普通用户访问前，在目标客户端验证授权、工具发现及一次有界调用。健康检查或发现文档成功不代表客户端授权已通过。
 
 Redis 备份及签名、Cookie、加密、指纹机密由部署负责人保管。轮换时，保留旧签名／Cookie／加密密钥，直至依赖它们的会话、令牌或绑定过期。使用同一份 Redis 数据与密钥集合验证恢复；readiness 不替代备份／恢复测试。
 
-在部署层配置入口和逐用户流量限制，只开放所需 Redis 与 Nstdata API 出站连接。基础设施日志需脱敏 Authorization、Cookie、OAuth code、用户 API Key 及请求正文。服务停止后，先检查故障与存储状态，再由进程管理器重启。
+在部署层配置入口和逐用户流量限制。放行所需 Redis、Nstdata API 连接，以及读取 CIMD 客户端元数据所需的 DNS 和公网 HTTPS 出站访问。基础设施日志需脱敏 `Authorization`、`X-API-Key`、Cookie、OAuth code 及请求正文。服务停止后，先检查故障与存储状态，再由进程管理器重启。
 
 收到 `SIGINT` 或 `SIGTERM` 后，服务停止接收新工作、取消本地处理，并在 10 秒宽限期内关闭自己的连接。停止服务不取消已提交给 Nstdata 的 Crawl 任务。

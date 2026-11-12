@@ -2,6 +2,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypt
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { errors } from 'oidc-provider';
 import { createOAuthProvider, type OAuthProviderOptions } from './oauth-provider.js';
+import { createApiKeyAuthenticator } from './api-key-auth.js';
 import { createOAuthHttpHandler } from './oauth-resource.js';
 import type { HttpHandlerOptions } from './http-handler.js';
 import { createRedisAdapterFactory } from './redis/provider-adapter.js';
@@ -10,6 +11,7 @@ import { createRemoteRequestPolicy, mcpEndpointPath } from './remote-request.js'
 export interface RemoteHandlerOptions extends OAuthProviderOptions {
     trustedProxyCidrs?: readonly string[];
     tlsTermination?: 'ingress';
+    apiKeyIdentityKey?: Uint8Array;
     verifyApiKey: (apiToken: string, signal: AbortSignal) => Promise<boolean>;
     allowedOrigins?: readonly string[];
     crawl?: HttpHandlerOptions['crawl'];
@@ -88,15 +90,14 @@ function configureRemoteHandler(options: RemoteHandlerOptions): RemoteHandler {
     const cookieKeys = [...options.cookieKeys];
     const verifyApiKey = options.verifyApiKey;
     const authorizeCredential = options.credentials.authorize.bind(options.credentials);
-    const clients = new Map(options.clients.map(client => [client.clientId, client.name ?? client.clientId]));
-    const callbackOrigins = [...new Set(options.clients.flatMap(client => client.redirectUris.map(uri => new URL(uri).origin)))];
-    const providerCsp = `default-src 'none'; script-src 'self'; form-action 'self' ${callbackOrigins.join(' ')}; frame-ancestors 'none'; base-uri 'none'`;
+    const providerCsp = `default-src 'none'; script-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`;
     const requestAllowed = createRemoteRequestPolicy(options.issuerUrl, options.trustedProxyCidrs, options.tlsTermination);
     const oauth = createOAuthProvider(options);
     // The request policy validates forwarded headers before Koa uses the proxy protocol.
     oauth.provider.proxy = options.trustedProxyCidrs !== undefined || options.tlsTermination === 'ingress';
     const mcp = createOAuthHttpHandler({ resourceUrl: resource.href, allowedOrigins: [...allowedOrigins],
-        oauthMetadata: oauth.metadata, verifyCredential: oauth.verifyCredential, crawl: options.crawl,
+        oauthMetadata: oauth.metadata, verifyCredential: oauth.verifyCredential,
+        verifyApiKey: options.apiKeyIdentityKey ? createApiKeyAuthenticator(verifyApiKey, options.apiKeyIdentityKey) : undefined, crawl: options.crawl,
         maxRequestBodyBytes: maxBody });
     const Adapter = createRedisAdapterFactory({ ...options.store, invalidGrant: () => new errors.InvalidGrant() });
     const csrfStore = new Adapter('InteractionCsrf');
@@ -111,7 +112,7 @@ function configureRemoteHandler(options: RemoteHandlerOptions): RemoteHandler {
         const values = current === undefined ? [] : Array.isArray(current) ? current.map(String) : [String(current)];
         response.setHeader('Set-Cookie', [...values, `${cookieName}=${value}; Path=${path}; Max-Age=${maxAge}; HttpOnly; SameSite=Strict${issuer.protocol === 'https:' ? '; Secure' : ''}`]);
     };
-    async function page(response: ServerResponse, uid: string, clientId: string, status = 200, error = '') {
+    async function page(response: ServerResponse, uid: string, client: { id: string; name: string; callbackOrigin: string }, status = 200, error = '') {
         const nonce = randomBytes(32).toString('base64url');
         const payload = `${nonce}.${Math.floor(Date.now() / 1000) + csrfLifetime}`;
         const token = `${payload}.${mac(cookieKeys[0], uid, payload)}`;
@@ -131,7 +132,9 @@ function configureRemoteHandler(options: RemoteHandlerOptions): RemoteHandler {
 </head>
 <body><main>
 <h1>Connect Nstdata</h1>
-<p>Allow <strong>${escape(clients.get(clientId)!)}</strong> to use Nstdata Crawl with your API key. Calls use your Nstdata credits.</p>
+<p>Allow <strong>${escape(client.name)}</strong> to use Nstdata Crawl with your API key. Calls use your Nstdata credits.</p>
+<p>Application ID: <code>${escape(client.id)}</code><br>Return to: <code>${escape(client.callbackOrigin)}</code></p>
+<p>The application name is supplied by its developer. Check the application ID and return address before authorizing.</p>
 <p>The application can renew access until this authorization expires or is revoked. Your key is stored encrypted. Only authorize an application you trust.</p>
 ${error ? `<p role="alert">${escape(error)}</p>` : ''}
 <form method="post" action="/oauth/interaction/${uid}">
@@ -185,6 +188,9 @@ ${error ? `<p role="alert">${escape(error)}</p>` : ''}
                     reply(response, 413, 'Request too large'); return;
                 }
                 if (isMcp) {
+                    const authHeaders = request.rawHeaders.filter((_value, index) => index % 2 === 0)
+                        .map(name => name.toLowerCase()).filter(name => name === 'authorization' || name === 'x-api-key');
+                    if (authHeaders.length > 1) { reply(response, 400, 'Invalid authentication headers'); return; }
                     const headers = new Headers();
                     for (const [name, value] of Object.entries(request.headers)) {
                         if (value !== undefined) headers.set(name, Array.isArray(value) ? value.join(', ') : value);
@@ -233,10 +239,15 @@ ${error ? `<p role="alert">${escape(error)}</p>` : ''}
                     catch { reply(response, 400, 'Authorization request expired'); return; }
                     const uid = interaction[1], clientId = details.params.client_id;
                     const requestedScopes = typeof details.params.scope === 'string' ? details.params.scope.split(' ').filter(Boolean) : [];
-                    if (details.uid !== uid || typeof clientId !== 'string' || !clients.has(clientId) || !requestedScopes.includes('crawl:use') ||
+                    if (details.uid !== uid || typeof clientId !== 'string' || !requestedScopes.includes('crawl:use') ||
                         requestedScopes.some(scope => !['crawl:use', 'offline_access'].includes(scope))) { reply(response, 400, 'Invalid authorization request'); return; }
+                    const redirectUri = details.params.redirect_uri;
+                    if (typeof redirectUri !== 'string') { reply(response, 400, 'Invalid authorization request'); return; }
+                    const resolved = await oauth.resolveClient(clientId, redirectUri);
                     controller.signal.throwIfAborted();
-                    if (request.method === 'GET') { await page(response, uid, clientId); return; }
+                    if (!resolved) { reply(response, 400, 'Invalid authorization request'); return; }
+                    const client = { id: clientId, name: resolved.name, callbackOrigin: new URL(redirectUri).origin };
+                    if (request.method === 'GET') { await page(response, uid, client); return; }
                     if (origin !== issuer.origin || !/^application\/x-www-form-urlencoded(?:\s*;\s*charset=utf-8)?$/i.test(request.headers['content-type'] ?? '')) {
                         reply(response, 403, 'Forbidden'); return;
                     }
@@ -259,9 +270,9 @@ ${error ? `<p role="alert">${escape(error)}</p>` : ''}
                     const apiToken = form.get('apiToken') ?? '';
                     let accepted;
                     try { accepted = await verifyApiKey(apiToken, controller.signal); }
-                    catch { if (!controller.signal.aborted) await page(response, uid, clientId, 503, 'Key verification is temporarily unavailable.'); return; }
+                    catch { if (!controller.signal.aborted) await page(response, uid, client, 503, 'Key verification is temporarily unavailable.'); return; }
                     controller.signal.throwIfAborted();
-                    if (accepted !== true) { await page(response, uid, clientId, 401, 'The API key was not accepted.'); return; }
+                    if (accepted !== true) { await page(response, uid, client, 401, 'The API key was not accepted.'); return; }
                     const binding = await authorizeCredential(apiToken);
                     controller.signal.throwIfAborted();
                     const grantId = await oauth.createGrant(binding, clientId, requestedScopes, controller.signal);

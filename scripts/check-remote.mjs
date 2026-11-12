@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-const sources = ['api-key-verifier', 'config', 'http-handler', 'modules/crawl-result', 'modules/crawl-schema',
+const sources = ['api-key-auth', 'api-key-verifier', 'client-metadata', 'config', 'http-handler', 'modules/crawl-result', 'modules/crawl-schema',
     'modules/crawl', 'modules/proxy', 'oauth-provider', 'oauth-resource', 'redis/credential-store',
     'redis/provider-adapter', 'redis/shared', 'remote-config', 'remote-handler', 'remote-request', 'remote-service', 'remote',
     'server', 'shared/errors', 'shared/output'];
@@ -35,7 +35,7 @@ export function verifyRemoteManifest(manifest, lock, local) {
     assert.equal(manifest.private, true, 'Remote must remain private and unpublishable');
     assert.equal(manifest.version, local.version);
     assert.equal(manifest.type, 'module');
-    assert.deepEqual(manifest.engines, local.engines);
+    assert.deepEqual(manifest.engines, { node: '^22.18.0 || ^24.11.0' });
     assert.deepEqual(Object.keys(manifest).filter(key => !['name', 'version', 'private', 'description', 'type', 'license', 'engines', 'dependencies'].includes(key)), [], 'Unexpected Remote manifest fields');
     assert.deepEqual(manifest.dependencies, { ...local.dependencies, '@redis/client': '6.3.1', 'oidc-provider': '9.13.3' });
     assert.equal(lock.lockfileVersion, 3);
@@ -181,11 +181,11 @@ export async function checkRemote() {
         const testOptions = { ...options, env: { ...environment, NSTDATA_REMOTE_TEST_CLI: cli } };
         const unitResult = await execute(process.execPath, ['--test', ...unitTests], testOptions, 'Installed Remote unit tests');
         process.stdout.write(unitResult.stdout); process.stderr.write(unitResult.stderr);
-        const integrations = ['redis', 'remote', 'remote-service'].map(name => path.join(root, `test/integration/${name}.test.mjs`));
+        const integrations = ['redis', 'remote', 'remote-service', 'automatic-onboarding', 'client-registration'].map(name => path.join(root, `test/integration/${name}.test.mjs`));
         const integrationResult = await execute(process.execPath, ['--test', ...integrations], testOptions, 'Installed Remote isolated Redis integration tests');
         process.stdout.write(integrationResult.stdout); process.stderr.write(integrationResult.stderr);
         verifyRemoteFiles(application, expected);
-        console.log(`PASS: ${manifest.name}@${manifest.version}; private independent artifact, ${artifactFiles.length} allowlisted files, ${dependencies.length} SHA512-verified offline runtime packages with exact file bytes; help/check without network; ${unitTests.length} Remote unit suites and all 3 isolated Redis/loopback integration suites`);
+        console.log(`PASS: ${manifest.name}@${manifest.version}; private independent artifact, ${artifactFiles.length} allowlisted files, ${dependencies.length} SHA512-verified offline runtime packages with exact file bytes; help/check without network; ${unitTests.length} Remote unit suites and all ${integrations.length} isolated Redis/loopback integration suites`);
     } finally { fs.rmSync(temp, { recursive: true, force: true }); }
 }
 

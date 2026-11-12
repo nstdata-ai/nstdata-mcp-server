@@ -162,7 +162,8 @@ export async function startRemoteService(input: RemoteServiceConfig): Promise<Re
             currentKeyId: config.currentKeyId, fingerprintKey: config.fingerprintKey });
         handler = createRemoteHandler({ issuerUrl: config.issuerUrl, resourceUrl,
             clients: config.clients, cookieKeys: config.cookieKeys, jwks: config.jwks, store, credentials,
-            verifyApiKey: createApiKeyVerifier(), allowedOrigins: config.allowedOrigins, trustedProxyCidrs: config.trustedProxyCidrs,
+            verifyApiKey: createApiKeyVerifier(), apiKeyIdentityKey: config.fingerprintKey,
+            allowedOrigins: config.allowedOrigins, trustedProxyCidrs: config.trustedProxyCidrs,
             tlsTermination: config.tlsTermination });
         await deadline((async () => {
             await client!.connect();

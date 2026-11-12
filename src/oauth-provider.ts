@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import Provider, { errors, interactionPolicy, type Configuration, type SigningAlgorithm } from 'oidc-provider';
+import Provider, { errors, interactionPolicy, type Configuration, type SigningAlgorithm, type ClientMetadata } from 'oidc-provider';
+import { createClientMetadataFetch, metadataUrl } from './client-metadata.js';
 import type { OAuthMetadata } from '@modelcontextprotocol/server';
 import type { OAuthHttpHandlerOptions } from './oauth-resource.js';
 import { createRedisAdapterFactory } from './redis/provider-adapter.js';
@@ -31,6 +32,7 @@ export interface OAuthProviderHost {
     provider: Provider;
     callback: (request: IncomingMessage, response: ServerResponse, signal?: AbortSignal) => Promise<void>;
     metadata: OAuthMetadata;
+    resolveClient: (clientId: string, redirectUri?: string) => Promise<{ name: string; redirectUris: readonly string[] } | undefined>;
     verifyCredential: OAuthHttpHandlerOptions['verifyCredential'];
     /** Call only after upstream key validation and explicit consent. */
     createGrant: (binding: CredentialBinding, clientId: string, scopes: readonly string[], signal: AbortSignal) => Promise<string>;
@@ -87,7 +89,7 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthProvide
         issuerIdentifier = options.issuerUrl;
         issuer = configuredUrl(issuerIdentifier);
         resource = configuredUrl(options.resourceUrl);
-        if (!Array.isArray(options.clients) || !options.clients.length || !Array.isArray(options.cookieKeys) ||
+        if (!Array.isArray(options.clients) || !Array.isArray(options.cookieKeys) ||
             !options.cookieKeys.length || !options.cookieKeys.every(secret) ||
             typeof options.credentials?.resolve !== 'function' || typeof options.credentials?.authorize !== 'function' ||
             typeof options.credentials?.revoke !== 'function') throw new Error();
@@ -117,6 +119,36 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthProvide
     } catch { throw new Error('Invalid OAuth provider configuration'); }
 
     const clientIds = new Set(clients.map(client => client.clientId));
+    const rateKey = `nstdata:mcp:{${store.namespace}}:onboarding:`;
+    async function admit(kind: string, maximum: number): Promise<boolean> {
+        checkRequest();
+        const result = await store.command(['EVAL', `
+local n=redis.call('INCR', KEYS[1])
+if n==1 then redis.call('EXPIRE', KEYS[1], 60) end
+return n
+`, '1', `${rateKey}${kind}`]);
+        checkRequest();
+        if (!Number.isSafeInteger(result) || Number(result) < 1) throw new RedisStoreError();
+        return Number(result) <= maximum;
+    }
+    function publicClient(metadata: ClientMetadata): void {
+        if (clientIds.has(metadata.client_id!)) return;
+        const redirects = metadata.redirect_uris;
+        if (metadata.token_endpoint_auth_method !== 'none' || metadata.client_secret !== undefined ||
+            !Array.isArray(redirects) || redirects.length < 1 || redirects.length > 16 ||
+            new Set(redirects).size !== redirects.length ||
+            !Array.isArray(metadata.grant_types) || !metadata.grant_types.includes('authorization_code') ||
+            metadata.grant_types.some(value => !['authorization_code', 'refresh_token'].includes(value)) ||
+            metadata.response_types?.length !== 1 || metadata.response_types[0] !== 'code' ||
+            typeof metadata.scope !== 'string' || !metadata.scope.split(' ').includes('crawl:use') ||
+            metadata.scope.split(' ').some(value => !scopes.includes(value)) ||
+            metadata.sector_identifier_uri || metadata.jwks_uri || metadata.jwks ||
+            (metadata.client_name !== undefined && (typeof metadata.client_name !== 'string' || metadata.client_name.length > 100 || /[\x00-\x1f\x7f]/.test(metadata.client_name)))) {
+            throw new errors.InvalidClientMetadata('Unsupported client configuration');
+        }
+        try { for (const uri of redirects) configuredUrl(uri, true); }
+        catch { throw new errors.InvalidClientMetadata('Unsupported redirect URI'); }
+    }
     const requestSignals = new AsyncLocalStorage<AbortSignal>();
     const checkRequest = () => { if (requestSignals.getStore()?.aborted) throw new RedisStoreError(); };
     const Adapter = createRedisAdapterFactory({ ...store, invalidGrant: () => new errors.InvalidGrant(), command: async args => {
@@ -151,9 +183,14 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthProvide
         provider = new Provider(issuerIdentifier, {
             adapter: Adapter,
             // Static clients are validated lazily; the library's default RS256 requires an RSA signing key.
-            clientDefaults: { id_token_signed_response_alg: clientSigningAlgorithm },
+            clientDefaults: { id_token_signed_response_alg: clientSigningAlgorithm,
+                application_type: 'native', token_endpoint_auth_method: 'none',
+                grant_types: ['authorization_code', 'refresh_token'], response_types: ['code'], scope: scopes.join(' ') },
+            extraClientMetadata: { properties: ['client_name'], validator: (_ctx, _key, _value, metadata) => publicClient(metadata) },
+            fetch: createClientMetadataFetch(),
+            fetchResponseBodyLimits: { 'client_id metadata document': 32_768 },
             clients: clients.map(client => ({
-                client_id: client.clientId, client_name: client.name, client_secret: client.clientSecret, redirect_uris: [...client.redirectUris],
+                application_type: 'web', client_id: client.clientId, client_name: client.name, client_secret: client.clientSecret, redirect_uris: [...client.redirectUris],
                 grant_types: ['authorization_code', 'refresh_token'], response_types: ['code'],
                 token_endpoint_auth_method: 'client_secret_basic', scope: scopes.join(' '),
             })),
@@ -162,14 +199,21 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthProvide
                 long: { httpOnly: true, sameSite: 'lax', secure: issuer.protocol === 'https:' },
                 short: { httpOnly: true, sameSite: 'lax', secure: issuer.protocol === 'https:' },
             },
-            jwks, ttl, scopes, responseTypes: ['code'], clientAuthMethods: ['client_secret_basic'],
+            jwks, ttl, scopes, responseTypes: ['code'], clientAuthMethods: ['none', 'client_secret_basic'],
             pkce: { required: () => true },
             rotateRefreshToken: true, expiresWithSession: () => false,
             // Explicit ongoing Crawl consent also covers OAuth clients that do not send OIDC prompt/offline_access.
             issueRefreshToken: (_ctx, client, source) => client.grantTypeAllowed('refresh_token') && source.scopes.has('crawl:use'),
             features: {
-                devInteractions: { enabled: false }, registration: { enabled: false },
-                registrationManagement: { enabled: false }, clientIdMetadataDocument: { enabled: false },
+                devInteractions: { enabled: false }, registration: { enabled: true, initialAccessToken: false, issueRegistrationAccessToken: false },
+                registrationManagement: { enabled: false }, clientIdMetadataDocument: {
+                    enabled: true, ack: 'draft-02', cacheDuration: { min: 30, max: 3600 },
+                    allowFetch: async (_ctx, clientId) => {
+                        try { metadataUrl(clientId); } catch { return false; }
+                        return admit('metadata', 120);
+                    },
+                    allowClient: (_ctx, client) => { publicClient(client.metadata()); return true; },
+                },
                 userinfo: { enabled: false }, rpInitiatedLogout: { enabled: false },
                 dPoP: { enabled: false }, pushedAuthorizationRequests: { enabled: false },
                 introspection: { enabled: true, allowedPolicy: (_ctx, client, token) => client.clientId === token.clientId },
@@ -186,7 +230,7 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthProvide
                 const clientId = ctx.oidc.client?.clientId;
                 const grantId = (source as { grantId?: string } | undefined)?.grantId
                     ?? ctx.oidc.result?.consent?.grantId ?? (clientId ? ctx.oidc.session?.grantIdFor(clientId) : undefined);
-                if (!clientId || !clientIds.has(clientId) || !grantId || !await liveBinding(grantId, accountId, clientId)) return undefined;
+                if (!clientId || !grantId || !await liveBinding(grantId, accountId, clientId)) return undefined;
                 return { accountId, claims: async () => ({ sub: accountId }) };
             },
             interactions: { policy, url: (_ctx, interaction) => `/oauth/interaction/${interaction.uid}` },
@@ -196,9 +240,17 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthProvide
             },
         });
     } catch { throw new Error('Invalid OAuth provider configuration'); }
-    // The provider retains OpenID internals; advertise only our fixed clients' allowed OAuth scopes.
+    // Keep discovery aligned with the OAuth resource rather than unused OpenID internals.
     provider.use(async (ctx, next) => {
+        if (ctx.path === provider.pathFor('registration') && ctx.method === 'POST' && !await admit('registration', 30)) {
+            ctx.status = 429; ctx.set('Retry-After', '60'); ctx.body = { error: 'temporarily_unavailable' }; return;
+        }
         await next();
+        const redirect = ctx.oidc?.params?.redirect_uri;
+        if (typeof redirect === 'string' && ctx.oidc.client?.redirectUriAllowed(redirect)) {
+            const policy = ctx.response.get('Content-Security-Policy');
+            if (policy) ctx.set('Content-Security-Policy', policy.replace(/form-action[^;]*/, `form-action 'self' ${new URL(redirect).origin}`));
+        }
         if (ctx.status === 200 && ctx.path === '/.well-known/openid-configuration' && ctx.body && typeof ctx.body === 'object') {
             (ctx.body as Record<string, unknown>).scopes_supported = [...scopes];
         }
@@ -210,7 +262,8 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthProvide
         jwks_uri: provider.urlFor('jwks'), revocation_endpoint: provider.urlFor('revocation'), introspection_endpoint: provider.urlFor('introspection'),
         response_types_supported: ['code'], grant_types_supported: ['authorization_code', 'refresh_token'],
         authorization_response_iss_parameter_supported: true,
-        token_endpoint_auth_methods_supported: ['client_secret_basic'], code_challenge_methods_supported: ['S256'], scopes_supported: [...scopes],
+        registration_endpoint: provider.urlFor('registration'), client_id_metadata_document_supported: true,
+        token_endpoint_auth_methods_supported: ['none', 'client_secret_basic'], code_challenge_methods_supported: ['S256'], scopes_supported: [...scopes],
     };
 
     return {
@@ -219,10 +272,15 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthProvide
             if (signal) await requestSignals.run(signal, handle);
             else await handle();
         }, metadata,
+        resolveClient: async (clientId, redirectUri) => {
+            const client = await provider.Client.find(clientId);
+            if (!client?.redirectUris?.length || (redirectUri !== undefined && !client.redirectUriAllowed(redirectUri))) return undefined;
+            return { name: client.clientName ?? client.clientId, redirectUris: [...client.redirectUris] };
+        },
         createGrant: (binding, clientId, grantedScopes, signal) => requestSignals.run(signal, async () => {
             try {
                 signal.throwIfAborted();
-                if (!clientIds.has(clientId) || !Array.isArray(grantedScopes) || !grantedScopes.includes('crawl:use') ||
+                if (!await provider.Client.find(clientId) || !Array.isArray(grantedScopes) || !grantedScopes.includes('crawl:use') ||
                     grantedScopes.some(scope => !scopes.includes(scope))) throw new errors.InvalidGrant();
                 const identity = await resolveCredential(binding.id, binding.version);
                 signal.throwIfAborted();
@@ -250,7 +308,7 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthProvide
                 signal.throwIfAborted();
                 if (!token?.isValid || token.tokenType !== 'Bearer' || typeof expiresAt !== 'number' || !Number.isSafeInteger(expiresAt) ||
                     expiresAt <= Date.now() / 1000 || token.aud !== resource.href || !token.accountId ||
-                    !token.grantId || !token.clientId || !clientIds.has(token.clientId) || typeof token.scope !== 'string') return null;
+                    !token.grantId || !token.clientId || typeof token.scope !== 'string') return null;
                 const client = await provider.Client.find(token.clientId);
                 signal.throwIfAborted();
                 if (!client || client.clientId !== token.clientId) return null;

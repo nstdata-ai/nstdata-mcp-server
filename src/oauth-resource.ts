@@ -16,6 +16,8 @@ export interface OAuthHttpHandlerOptions extends Omit<HttpHandlerOptions, 'authe
      * the upstream apiToken in AuthInfo, tokens, metadata or logs. No token issuance/storage here.
      */
     verifyCredential: (rawToken: string, signal: AbortSignal) => Promise<{ authInfo: AuthInfo; identity: HttpIdentity } | null>;
+    /** Optional direct-key authentication, independent from OAuth consent and persistent grants. */
+    verifyApiKey?: (apiToken: string, signal: AbortSignal) => Promise<HttpIdentity | null>;
 }
 
 function publicUrl(value: string): URL {
@@ -44,6 +46,8 @@ export function createOAuthHttpHandler(options: OAuthHttpHandlerOptions): HttpHa
     for (const origin of options.allowedOrigins) publicUrl(origin);
     if (typeof options.verifyCredential !== 'function') throw new Error('OAuth credential verification is required');
     const verifyCredential = options.verifyCredential;
+    const verifyApiKey = options.verifyApiKey;
+    if (verifyApiKey !== undefined && typeof verifyApiKey !== 'function') throw new Error('Invalid API key authenticator');
     const oauthMetadata = structuredClone(options.oauthMetadata);
     const issuer = publicUrl(oauthMetadata.issuer);
     for (const [name, value] of Object.entries(oauthMetadata)) {
@@ -64,6 +68,18 @@ export function createOAuthHttpHandler(options: OAuthHttpHandlerOptions): HttpHa
         ...options,
         resourceUrl: resource.href,
         authenticate: async request => {
+            const apiKey = request.headers.get('x-api-key');
+            if (apiKey !== null) {
+                if (request.headers.has('authorization')) return Response.json({ error: 'Invalid request' }, { status: 400 });
+                if (!apiKey || apiKey.includes(',') || !verifyApiKey) return Response.json({ error: 'Invalid API key' }, { status: 401 });
+                let identity: HttpIdentity | null;
+                try { identity = await verifyApiKey(apiKey, request.signal); }
+                catch { return unavailable(); }
+                if (request.signal.aborted || closed) return unavailable();
+                if (!identity || typeof identity.subject !== 'string' || !identity.subject.trim() ||
+                    identity.apiToken !== apiKey) return Response.json({ error: 'Invalid API key' }, { status: 401 });
+                return identity;
+            }
             let identity: HttpIdentity | undefined;
             let verifierFailed = false;
             const gate = requireBearerAuth({

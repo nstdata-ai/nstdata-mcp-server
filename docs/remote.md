@@ -1,16 +1,53 @@
-# Self-hosted Remote MCP
+# Remote MCP
 
-[中文](remote_zh.md) · [Local client setup](../README.md)
+[中文](remote_zh.md) · [Local client setup](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/README.md)
 
-Run the Crawl tools behind an HTTPS MCP endpoint with per-user OAuth authorization. Each user enters their existing Nstdata API key on the consent page; calls use that user's credits. Do not configure a shared `NSTDATA_API_TOKEN` for this service. Proxy tools remain available through the separate local stdio configuration.
+Use the six Nstdata Crawl tools through a Streamable HTTP endpoint. Each user supplies their own Nstdata API key; Crawl calls use that user's credits and permissions. Proxy tools use the [local stdio server](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/README.md).
 
-Remote is a separate application built from this repository. It is not included in the local `@nstdata-ai/mcp-server` npm package; the npm package's installation and client configuration remain unchanged.
+## Connect a client
 
-## Deployment requirements
+Use the HTTPS MCP URL supplied by the service operator, for example `https://mcp.example.com/crawl`.
 
-- Node.js 22.18+ in the 22.x line, or Node.js 24, and a stable public HTTPS origin. The certificate can be managed by an existing gateway or loaded by this application.
+| Authentication | Suitable for | Configuration |
+|---|---|---|
+| OAuth | Clients that support browser authorization | MCP URL; the client discovers and registers itself automatically |
+| API key | Clients and programs that can set request headers | The same MCP URL and an `X-API-Key` header containing your Nstdata API key |
+
+For OAuth:
+
+1. Add the URL as a Streamable HTTP MCP server and choose OAuth if the client asks for an authentication method.
+2. Open the authorization link, check the requesting application, and enter your API key from the [Nstdata dashboard](https://app.nstdata.io/).
+3. Select **Authorize Crawl**, return to the client, and confirm that the six `nstdata_crawl_*` tools are available.
+
+The authorization page verifies your API key and asks for consent; it does not sign you into a Nstdata account. The application can renew the granted access until it expires or is revoked. Adding another device requires no server configuration or restart. Client interfaces and organization policies may differ; the client must support the selected authentication method.
+
+### API key access
+
+Configure one `X-API-Key` header in the client's protected settings. `Authorization: Bearer` is reserved for OAuth access tokens; do not put a business API key there or send both credentials. Do not put credentials in URLs or share them in logs.
+
+To check tool discovery from a Linux/macOS terminal, set `NSTDATA_API_TOKEN` in your local environment, replace the example URL, and run:
+
+```sh
+NSTDATA_MCP_URL='https://mcp.example.com/crawl'
+curl --fail-with-body --silent --show-error --max-time 15 \
+  --request POST "$NSTDATA_MCP_URL" \
+  --header "X-API-Key: ${NSTDATA_API_TOKEN:?Set NSTDATA_API_TOKEN}" \
+  --header 'Content-Type: application/json' \
+  --header 'Accept: application/json, text/event-stream' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+The response lists six Crawl tools without submitting a Crawl task. Keep the key out of shell history and disable command tracing. Invalid credentials return `401`; conflicting credentials return `400`. A verification or storage outage returns `503`, without falling back to another authentication method.
+
+API key requests validate the key for each request and do not create an OAuth authorization. Revoking an OAuth grant does not revoke the underlying Nstdata API key. Revoking the business key prevents upstream Crawl calls; it does not immediately invalidate every previously issued OAuth token. Preserve task IDs when reconnecting, and do not resubmit tasks whose submission status is unknown.
+
+## Self-hosting requirements
+
+Remote is a separate application built from this repository. It is not included in the local `@nstdata-ai/mcp-server` npm package; local installation and client configuration remain unchanged. Do not configure a shared `NSTDATA_API_TOKEN` for the service.
+
+- Node.js 22.18+ in the 22.x line, or Node.js 24.11+ in the 24.x LTS line, and a stable public HTTPS origin. The certificate can be managed by an existing gateway or loaded by this application.
 - Standalone Redis with persistent storage, `noeviction`, an isolated namespace and the adapter's required key/Lua permissions. Use verified TLS (`rediss:`) or a protected local Unix socket; Cluster and Sentinel are not supported.
-- Register fixed OAuth client IDs, secrets and exact callback URLs in the target platform. The service requires `client_secret_basic` and S256 PKCE; dynamic client registration is not enabled.
+- Public clients use authorization code with S256 PKCE. The server accepts Client ID Metadata Documents (CIMD) and dynamic client registration (DCR); pre-registered confidential clients remain optional. No per-device client secret is required.
 
 ## HTTPS ingress modes
 
@@ -61,10 +98,7 @@ const config = {
     url: 'rediss://USER:PASSWORD@redis.example.com:6379/0',
     namespace: 'production'
   },
-  clients: [{
-    clientId: 'platform-client', clientSecret: secret(), name: 'Configured platform',
-    redirectUris: ['https://client.example.com/oauth/callback']
-  }],
+  clients: [],
   cookieKeys: [secret()],
   jwks: { keys: [{
     ...privateKey.export({ format: 'jwk' }), kid: 'signing-1', use: 'sig', alg: 'RS256'
@@ -82,7 +116,7 @@ Run it once, using an existing protected directory:
 node create-remote-config.mjs /absolute/path/remote.json
 ```
 
-The program refuses to overwrite existing files and never prints secrets. Edit the protected JSON with the issuer, listener, URL-encoded Redis credentials, client ID and exact callback. The example uses managed ingress. For IP restrictions, replace `tlsTermination` with the actual `trustedProxyCidrs`; for direct TLS, replace it with certificate/private-key paths in `listen.tls`. Copy only the matching `clientSecret` into the platform's protected OAuth settings. Do not regenerate keys on restart. Existing configurations keep their original behavior unless this new mode is explicitly selected; use an application/image that supports it.
+The program refuses to overwrite existing files and never prints secrets. Edit the protected JSON with the issuer, listener and URL-encoded Redis credentials. Empty `clients` enables automatic onboarding without static client credentials. For a platform that explicitly requires a pre-registered confidential client, add its matching client ID, secret and exact callback URLs once. The example uses managed ingress; use `trustedProxyCidrs` or application TLS instead only when your deployment requires that mode. Do not regenerate keys on restart.
 
 | Field | Configuration rule |
 |---|---|
@@ -92,12 +126,18 @@ The program refuses to overwrite existing files and never prints secrets. Edit t
 | `tlsTermination` | Set `"ingress"` to trust a platform-managed HTTPS ingress with a private HTTP backend; mutually exclusive with `trustedProxyCidrs` and `listen.tls` |
 | `trustedProxyCidrs` | Optional immediate-peer IP/CIDR allowlist mode; mutually exclusive with `tlsTermination` and `listen.tls` |
 | `redis` | Exactly one `url` or absolute `socketPath`, plus a distinct namespace per environment |
-| `clients` | Pre-registered client IDs, secrets of at least 32 bytes, and exact callback URLs |
+| `clients` | Optional pre-registered confidential clients; use `[]` for automatic onboarding. Static entries need an ID, a secret of at least 32 bytes, and exact callback URLs |
 | `cookieKeys` | Stable secrets of at least 32 bytes; put the current key first |
 | `jwks.keys` | Private signing JWKs with unique `kid`, `use: "sig"` and a matching supported algorithm |
 | `encryptionKeys`, `currentKeyId` | Named 32-byte base64url keys and the current encryption key's ID |
 | `fingerprintKey` | Independent stable 32-byte base64url key; changing it requires a new namespace |
 | `allowedOrigins` | Optional exact browser origins; no wildcards. Non-browser requests may omit Origin |
+
+### OAuth client policy
+
+Automatic onboarding does not require entries in `clients`; omit the field or use `[]`. CIMD clients publish their metadata at a public HTTPS URL on port 443, without a query or fragment. Metadata requests reject private addresses and redirects and have bounded time, response size and concurrency.
+
+For clients that use DCR, registration is limited to 30 requests per minute and 10,000 stored clients per Redis namespace. Registrations persist across service restarts and expire after 30 days and 5 minutes without a client lookup. A lookup renews that retention period; expired registrations release capacity automatically. Monitor registration failures and storage capacity before admitting a large client population. Existing static clients continue to use `client_secret_basic` with S256 PKCE; public clients use `none` with S256 PKCE.
 
 To use `https://mcp.example.com/crawl`, add this property to the existing configuration; it is not a complete configuration file:
 
@@ -182,12 +222,12 @@ The registry address, source commit, tag and digest may appear in public build l
 
 If push fails or is interrupted, inspect the registry before another dispatch. If push succeeds but digest recording fails, publication may already be complete; do not republish just to recover the digest. The workflow neither rebuilds after validation nor retries publication or polls for public visibility. It requires no npm token, Kubernetes credentials or deployment permissions.
 
-## Connect and operate
+## Operate the service
 
-Configure the target platform with the deployed MCP URL (`issuerUrl` plus `mcpPath`, `/mcp` by default) and its matching fixed client credentials. Use advertised OAuth discovery metadata rather than inventing authorization/token paths. Request `crawl:use`; access renewal remains subject to the granted authorization. Verify the actual platform's authorization, tool discovery and a bounded request before opening general access.
+Route the MCP resource and the advertised discovery, authorization, token and registration endpoints through the gateway. Clients discover those endpoints automatically. Verify authorization, tool discovery and one bounded call in the intended client before opening general access. A successful health or discovery response does not prove that client authorization works.
 
 Keep Redis backups and all signing, cookie, encryption and fingerprint secrets under the deployment owner's control. During rotation, retain previous signing/cookie/encryption keys until their dependent sessions, tokens or bindings have expired. Test recovery from the same Redis data and key set. Readiness alone is not a backup or recovery test.
 
-Apply ingress and per-user traffic limits at the deployment layer, and allow only the required Redis and Nstdata API egress. Redact authorization headers, cookies, OAuth codes, user API keys and request bodies from infrastructure logs. Use a supervisor to restart a stopped service only after checking the failure and storage state.
+Apply ingress and per-user traffic limits at the deployment layer. Permit the required Redis and Nstdata API connections, plus DNS and public HTTPS access for CIMD client metadata. Redact `Authorization`, `X-API-Key`, cookies, OAuth codes and request bodies from infrastructure logs. Use a supervisor to restart a stopped service only after checking the failure and storage state.
 
 `SIGINT` or `SIGTERM` stops new work, aborts local handling and closes owned connections within a 10-second grace period. Stopping the service does not cancel Crawl tasks already submitted to Nstdata.

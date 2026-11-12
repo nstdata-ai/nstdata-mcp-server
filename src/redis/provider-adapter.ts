@@ -7,7 +7,7 @@ export interface RedisProviderAdapterOptions extends StoreOptions {
 }
 
 export interface RedisProviderAdapter {
-    upsert(id: string, payload: Payload, expiresIn: number): Promise<void>;
+    upsert(id: string, payload: Payload, expiresIn?: number): Promise<void>;
     find(id: string): Promise<Payload | undefined>;
     findByUid(uid: string): Promise<Payload | undefined>;
     findByUserCode(userCode: string): Promise<Payload | undefined>;
@@ -122,6 +122,27 @@ if userCodeIndex ~= '' then redis.call('SET', userCodeIndex, id, 'EXAT', expires
 return 1
 `;
 
+const clientUpsertScript = `
+local now = tonumber(redis.call('TIME')[1])
+redis.call('ZREMRANGEBYSCORE', KEYS[2], '-inf', now)
+if redis.call('EXISTS', KEYS[1]) == 0 and redis.call('ZCARD', KEYS[2]) >= 10000 then return 0 end
+redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
+redis.call('ZADD', KEYS[2], now + tonumber(ARGV[2]), KEYS[1])
+return 1
+`;
+const clientFindScript = `
+local raw = redis.call('GET', KEYS[1])
+if not raw then redis.call('ZREM', KEYS[2], KEYS[1]); return nil end
+local now = tonumber(redis.call('TIME')[1])
+redis.call('EXPIRE', KEYS[1], ARGV[1])
+redis.call('ZADD', KEYS[2], now + tonumber(ARGV[1]), KEYS[1])
+return raw
+`;
+const clientDestroyScript = `
+redis.call('DEL', KEYS[1])
+redis.call('ZREM', KEYS[2], KEYS[1])
+return 1
+`;
 const findScript = common + `
 local payload, raw, bindingId, version = valid(KEYS[1], ARGV[1])
 if not payload then return nil end
@@ -184,9 +205,10 @@ export function createRedisAdapterFactory(options: RedisProviderAdapterOptions):
             this.model = text(model);
             this.mode = model === 'Grant' ? 'grant' : requiresGrant.has(model) ? 'token' : grantable.has(model) ? 'grantable' : 'other';
         }
-        async upsert(id: string, payload: Payload, expiresIn: number): Promise<void> {
+        async upsert(id: string, payload: Payload, expiresIn?: number): Promise<void> {
             const recordKey = keys.record(this.model, text(id));
-            if (!Number.isSafeInteger(expiresIn) || expiresIn <= 0 || expiresIn > maxTtlSeconds) throw new TypeError('Provider TTL exceeds storage policy');
+            if (this.model !== 'Client' && (!Number.isSafeInteger(expiresIn) || expiresIn! <= 0 || expiresIn! > maxTtlSeconds)) throw new TypeError('Provider TTL exceeds storage policy');
+            if (this.model === 'Client' && expiresIn !== undefined) throw new TypeError('Client registrations use durable storage');
             let raw: string;
             let snapshot: Payload;
             try {
@@ -195,6 +217,12 @@ export function createRedisAdapterFactory(options: RedisProviderAdapterOptions):
                 snapshot = JSON.parse(raw) as Payload;
                 if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) throw new Error();
             } catch { throw new TypeError('Invalid provider payload'); }
+            if (this.model === 'Client') {
+                if (snapshot.client_id !== id) throw new TypeError('Invalid client registration');
+                const result = await evaluate(clientUpsertScript, [recordKey, `${keys.prefix}clients`], [raw, String(maxTtlSeconds + 300)]);
+                if (result !== 1) throw new RedisStoreError();
+                return;
+            }
             if ((snapshot.exp !== undefined && (!Number.isSafeInteger(snapshot.exp) || Number(snapshot.exp) <= 0))
                 || (this.mode !== 'other' && snapshot.exp === undefined)) throw new TypeError('Provider absolute expiry is required');
             if (snapshot.consumed !== undefined && (!Number.isSafeInteger(snapshot.consumed) || Number(snapshot.consumed) <= 0)) throw new TypeError('Invalid provider consumption marker');
@@ -221,6 +249,17 @@ export function createRedisAdapterFactory(options: RedisProviderAdapterOptions):
             return result as string[];
         }
         async find(id: string): Promise<Payload | undefined> {
+            if (this.model === 'Client') {
+                // Keep client metadata beyond any token/grant issued by this lookup, including the interaction window.
+                const raw = await evaluate(clientFindScript, [keys.record(this.model, text(id)), `${keys.prefix}clients`], [String(maxTtlSeconds + 300)]);
+                if (raw === null) return undefined;
+                try {
+                    if (typeof raw !== 'string' || Buffer.byteLength(raw) > MAX_PAYLOAD_BYTES) throw new Error();
+                    const payload = JSON.parse(raw) as Payload;
+                    if (!payload || typeof payload !== 'object' || Array.isArray(payload) || payload.client_id !== id) throw new Error();
+                    return payload;
+                } catch { throw new RedisStoreError(); }
+            }
             const result = await this.read(this.model, id, this.mode);
             if (!result) return undefined;
             try {
@@ -256,6 +295,11 @@ export function createRedisAdapterFactory(options: RedisProviderAdapterOptions):
             if (result !== 1) throw new RedisStoreError();
         }
         async destroy(id: string): Promise<void> {
+            if (this.model === 'Client') {
+                const result = await evaluate(clientDestroyScript, [keys.record(this.model, text(id)), `${keys.prefix}clients`], []);
+                if (result !== 1) throw new RedisStoreError();
+                return;
+            }
             if (this.model === 'Grant') { await this.revokeByGrantId(id); return; }
             const result = await evaluate(destroyScript, [keys.record(this.model, text(id))], [id, this.model === 'Session' ? 'session' : this.mode, String(maxTtlSeconds)]);
             if (result !== 1) throw new RedisStoreError();

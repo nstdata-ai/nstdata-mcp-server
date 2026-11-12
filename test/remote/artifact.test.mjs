@@ -10,7 +10,7 @@ import { verifyRemoteManifest, verifyRemoteFiles, verifyInstalledDependency } fr
 const local = { version: '1.0.2', engines: { node: '^22.18.0 || ^24.0.0' }, dependencies: { fixture: '1.0.0' } };
 function manifests() {
     const manifest = { name: '@nstdata-ai/mcp-server-remote', version: local.version, private: true, type: 'module',
-        engines: local.engines, dependencies: { ...local.dependencies, '@redis/client': '6.3.1', 'oidc-provider': '9.13.3' } };
+        engines: { node: '^22.18.0 || ^24.11.0' }, dependencies: { ...local.dependencies, '@redis/client': '6.3.1', 'oidc-provider': '9.13.3' } };
     const lock = { name: manifest.name, version: manifest.version, lockfileVersion: 3, packages: { '': {
         name: manifest.name, version: manifest.version, engines: manifest.engines, dependencies: manifest.dependencies,
     }, ...Object.fromEntries(Object.entries(manifest.dependencies).map(([name, version]) => [`node_modules/${name}`, {
@@ -24,6 +24,7 @@ test('Remote artifact checks reject publishability, unpinned or externally linke
     verifyRemoteManifest(manifest, lock, local);
     for (const change of [value => { value.manifest.private = false; },
         value => { value.manifest.scripts = { postinstall: 'unexpected' }; },
+        value => { value.manifest.engines = local.engines; },
         value => { value.lock.packages['node_modules/fixture'].integrity = 'sha1-unverified'; },
         value => { value.lock.packages['node_modules/fixture'].resolved = 'file:../fixture'; },
         value => { value.lock.packages['node_modules/fixture'].link = true; },

@@ -4,7 +4,7 @@
 
 Use Nstdata Crawl and HTTP/HTTPS proxies from an MCP client. The client starts a local stdio process; no additional hosted MCP service is required.
 
-Operators building a separate HTTPS service from source can use the [self-hosting guide](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/docs/remote.md). The npm package provides the local stdio server.
+To connect to or host an HTTPS endpoint, see [Remote MCP](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/docs/remote.md). The npm package provides the local stdio server.
 
 ## Connect
 

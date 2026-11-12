@@ -22,6 +22,8 @@ function fixture(extra = {}) {
     const keys = createRedisKeys('oauth_provider_unit');
     const state = { active: true, version: 1, hook: undefined };
     const execute = async args => {
+        if (args[0] === 'GET') return records.get(args[1])?.raw ?? null;
+        if (args[0] === 'EVAL' && args[2] === '2') return records.get(args[3])?.raw ?? null;
         assert.equal(args[0], 'EVAL');
         if (args[2] === '6') {
             records.set(args[3], { raw: args[10], bindingId: args[14], version: String(state.version) });
@@ -67,7 +69,7 @@ test('provider validates fixed clients, key inputs and TTL policy before Redis',
     const { options, commands } = fixture();
     for (const change of [
         { issuerUrl: 'http://public.example.test' }, { resourceUrl: 'https://example.test/mcp?x=1' },
-        { clients: [] }, { cookieKeys: [] }, { cookieKeys: ['short'] }, { jwks: { keys: [] } },
+        { clients: null }, { cookieKeys: [] }, { cookieKeys: ['short'] }, { jwks: { keys: [] } },
         { ttl: { AccessToken: 3601 } }, { ttl: { Grant: 0 } }, { ttl: { Other: 10 } },
         { clients: [{ ...options.clients[0], clientSecret: '' }] },
         { clients: [{ ...options.clients[0], redirectUris: ['http://public.example.test/callback'] }] },
@@ -92,8 +94,8 @@ test('actual discovery matches trusted metadata and rejects openid for the fixed
     for (const [field, value] of Object.entries(f.host.metadata)) assert.deepEqual(discovery[field], value, field);
     assert.deepEqual(discovery.scopes_supported, ['crawl:use', 'offline_access']);
     assert.equal(discovery.authorization_response_iss_parameter_supported, true);
-    assert.equal(discovery.registration_endpoint, undefined);
-    assert.equal(discovery.client_id_metadata_document_supported, undefined);
+    assert.equal(discovery.registration_endpoint, `${origin}/reg`);
+    assert.equal(discovery.client_id_metadata_document_supported, true);
     assert.equal(discovery.userinfo_endpoint, undefined);
     assert.equal(discovery.end_session_endpoint, undefined);
     assert.equal(discovery.pushed_authorization_request_endpoint, undefined);
@@ -273,7 +275,7 @@ test('grant creation refuses unknown scopes, stale bindings and clients before s
         [binding, 'unknown', ['crawl:use']], [binding, 'fixed-client', ['openid', 'crawl:use']],
         [binding, 'fixed-client', ['offline_access']], [{ ...binding, version: 2 }, 'fixed-client', ['crawl:use']],
     ]) await assert.rejects(f.host.createGrant(currentBinding, clientId, grantedScopes, signal()), error => error.error === 'invalid_grant');
-    assert.equal(f.commands.length, 0);
+    assert(f.commands.every(args => args[0] === 'EVAL' && args[2] === '2'), 'unknown dynamic clients use the bounded registration lookup');
 });
 
 test('aborts stop subsequent reads and ambiguous writes never replay or leak store errors', async () => {

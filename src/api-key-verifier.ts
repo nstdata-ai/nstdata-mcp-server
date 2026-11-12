@@ -9,7 +9,7 @@ export interface ApiKeyVerifierOptions {
 const MAX_TOKEN_BYTES = 16_384;
 const unavailable = () => new Error('API key verification unavailable');
 
-function validToken(value: unknown): value is string {
+export function validApiKey(value: unknown): value is string {
     return typeof value === 'string' && value.length > 0 && !/[\s\u0000-\u001f\u007f]/u.test(value) &&
         Buffer.byteLength(value, 'utf8') <= MAX_TOKEN_BYTES && Buffer.from(value, 'utf8').toString('utf8') === value;
 }
@@ -38,7 +38,7 @@ export function createApiKeyVerifier(options: ApiKeyVerifierOptions = {}): (apiT
 
     return async (apiToken, signal) => {
         if (!(signal instanceof AbortSignal) || signal.aborted) throw unavailable();
-        if (!validToken(apiToken)) return false;
+        if (!validApiKey(apiToken)) return false;
         const controller = new AbortController();
         const deadline = performance.now() + timeoutMs;
         let response: Response | undefined;
