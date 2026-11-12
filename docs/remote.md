@@ -164,9 +164,9 @@ node remote/dist/remote.js --config /absolute/path/remote.json
 
 `--check` validates the configuration and, for direct TLS, the TLS files and certificate/key match. It does not connect to Redis, listen or call Nstdata. Successful validation does not prove DNS, certificate trust, Redis ACLs or platform compatibility.
 
-Startup connects to Redis and requires a successful `PING` before listening. Connection setup has a 5-second deadline; commands have a 2-second deadline. A Redis failure or deadline stops the service without automatic reconnect or command replay. A timed-out write may already have executed: investigate before retrying authorization operations.
+Startup connects to Redis and requires a successful `PING` before listening. A serial `PING` every 30 seconds keeps idle connections active. Connection setup has a 5-second deadline; commands, including heartbeats, have a 2-second deadline. A Redis failure or deadline stops the service without automatic reconnect or command replay. Failure logs include a fixed category such as `REDIS_CONNECTION` or `REDIS_TIMEOUT`, without connection details or credentials. A timed-out write may already have executed: investigate before retrying authorization operations.
 
-Each process accepts at most 256 concurrent connections, 32 active business requests and 64 in-flight Redis commands. Excess work is rejected without queuing or retrying; reaching these capacity limits does not stop the service. TLS handshakes and request headers have 10-second deadlines; request handling is bounded to 130 seconds. Set deployment traffic limits to match capacity before opening public access.
+Each process accepts at most 256 concurrent connections, 32 active business requests and 64 in-flight business Redis commands, with one separate heartbeat slot. Excess work is rejected without queuing or retrying; reaching these capacity limits does not stop the service. TLS handshakes and request headers have 10-second deadlines; request handling is bounded to 130 seconds. Set deployment traffic limits to match capacity before opening public access.
 
 | Endpoint | Meaning |
 |---|---|

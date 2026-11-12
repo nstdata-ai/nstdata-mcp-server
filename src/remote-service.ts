@@ -22,9 +22,17 @@ export interface RemoteService {
 
 const startupTimeoutMs = 5_000;
 const commandTimeoutMs = 2_000;
+const heartbeatIntervalMs = 30_000;
 const shutdownTimeoutMs = 10_000;
 const maxActiveRequests = 32;
-const serviceError = () => new Error('Remote service unavailable. Check deployment configuration and Redis.');
+type ServiceFailureCode = 'REDIS_CONNECTION' | 'REDIS_COMMAND' | 'REDIS_TIMEOUT' | 'REDIS_HEARTBEAT' | 'LISTENER' | 'STARTUP' | 'SHUTDOWN';
+export class RemoteServiceError extends Error {
+    constructor(readonly code: ServiceFailureCode) {
+        super('Remote service unavailable. Check deployment configuration and Redis.');
+        this.name = 'RemoteServiceError';
+    }
+}
+const serviceError = (code: ServiceFailureCode = 'STARTUP') => new RemoteServiceError(code);
 
 async function boundedFile(filename: string, privateFile: boolean): Promise<Buffer> {
     let file: Awaited<ReturnType<typeof open>> | undefined;
@@ -82,14 +90,15 @@ export async function startRemoteService(input: RemoteServiceConfig): Promise<Re
     let activeRequests = 0;
     let started = false, closing = false;
     let failure: Error | undefined, closePromise: Promise<void> | undefined;
+    let heartbeatTimer: ReturnType<typeof setTimeout> | undefined;
     let resolveClosed!: () => void, rejectClosed!: (error: Error) => void;
     const closed = new Promise<void>((resolve, reject) => { resolveClosed = resolve; rejectClosed = reject; });
     // Startup failures may precede the caller receiving this promise.
     void closed.catch(() => {});
 
     const destroyRedis = () => { client?.destroy(); };
-    const fail = () => {
-        failure ??= serviceError();
+    const fail = (code: ServiceFailureCode) => {
+        failure ??= serviceError(code);
         destroyRedis();
         if (started) void close();
     };
@@ -97,19 +106,20 @@ export async function startRemoteService(input: RemoteServiceConfig): Promise<Re
         let timer: ReturnType<typeof setTimeout> | undefined;
         try {
             return await Promise.race([operation, new Promise<never>((_resolve, reject) => {
-                timer = setTimeout(() => { fail(); reject(serviceError()); }, timeoutMs);
+                timer = setTimeout(() => { fail('REDIS_TIMEOUT'); reject(serviceError('REDIS_TIMEOUT')); }, timeoutMs);
             })]);
         } finally { clearTimeout(timer); }
     }
     function close(): Promise<void> {
         if (closePromise) return closePromise;
         closing = true;
+        clearTimeout(heartbeatTimer);
         closePromise = (async () => {
             let timer: ReturnType<typeof setTimeout> | undefined;
             try {
                 const stopped = server ? new Promise<void>(resolve => server!.close(() => resolve())) : Promise.resolve();
                 server?.closeIdleConnections();
-                const stoppedHandler = handler?.close().catch(() => { failure ??= serviceError(); });
+                const stoppedHandler = handler?.close().catch(() => { failure ??= serviceError('SHUTDOWN'); });
                 destroyRedis();
                 await Promise.race([Promise.all([stopped, stoppedHandler]), new Promise<void>(resolve => {
                     timer = setTimeout(() => { for (const socket of sockets) socket.destroy(); resolve(); }, shutdownTimeoutMs);
@@ -151,12 +161,23 @@ export async function startRemoteService(input: RemoteServiceConfig): Promise<Re
                 ...(redis?.protocol === 'rediss:' && !isIP(redis.hostname.replace(/^\[|\]$/g, '')) ? { servername: redis.hostname } : {}),
                 connectTimeout: startupTimeoutMs, reconnectStrategy: false },
         });
-        client.on('error', fail);
+        client.on('error', () => fail('REDIS_CONNECTION'));
         const command = limitRedisCommands(async (args: string[]): Promise<unknown> => {
             if (closing || !client?.isReady) throw new RedisStoreError();
             try { return await deadline(client.sendCommand(args), commandTimeoutMs); }
-            catch { fail(); throw new RedisStoreError(); }
+            catch { if (!closing) fail('REDIS_COMMAND'); throw new RedisStoreError(); }
         });
+        const heartbeat = () => {
+            if (closing) return;
+            heartbeatTimer = setTimeout(async () => {
+                if (closing) return;
+                // Reserve one connection slot even when application command admission is full.
+                try { if (await deadline<unknown>(client!.sendCommand(['PING']), commandTimeoutMs) !== 'PONG') fail('REDIS_HEARTBEAT'); }
+                catch { if (!closing) fail('REDIS_HEARTBEAT'); }
+                heartbeat();
+            }, heartbeatIntervalMs);
+            heartbeatTimer.unref();
+        };
         const store = { command, namespace: config.redis.namespace, maxTtlSeconds: 2_592_000 };
         const credentials = createRedisCredentialStore({ ...store, encryptionKeys: config.encryptionKeys,
             currentKeyId: config.currentKeyId, fingerprintKey: config.fingerprintKey });
@@ -205,7 +226,7 @@ export async function startRemoteService(input: RemoteServiceConfig): Promise<Re
         server.keepAliveTimeout = 5_000;
         server.maxRequestsPerSocket = 100;
         server.on('connection', socket => { sockets.add(socket); socket.once('close', () => sockets.delete(socket)); });
-        server.on('error', fail);
+        server.on('error', () => fail('LISTENER'));
         await new Promise<void>((resolve, reject) => {
             const failed = () => { server!.off('listening', listening); reject(serviceError()); };
             const listening = () => { server!.off('error', failed); resolve(); };
@@ -216,10 +237,11 @@ export async function startRemoteService(input: RemoteServiceConfig): Promise<Re
         const address = server.address();
         if (!address || typeof address === 'string') throw serviceError();
         started = true;
+        heartbeat();
         return { address, close, closed };
     } catch {
         failure ??= serviceError();
         await close();
-        throw serviceError();
+        throw failure;
     }
 }

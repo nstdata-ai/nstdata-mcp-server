@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { remoteCli as cli } from '../helpers.mjs';
 
-const { renderConsentPage, renderConsentError, consentPageCsp } = await import(new URL('./consent-page.js', pathToFileURL(cli)));
+const { renderConsentPage, renderConsentError, consentPageCsp, consentFormCsp } = await import(new URL('./consent-page.js', pathToFileURL(cli)));
 const options = {
     action: '/oauth/interaction/synthetic-interaction',
     csrf: 'synthetic-csrf',
@@ -79,4 +79,14 @@ test('expired and rejected interactions render actionable escaped text without a
     assert.match(html, /Restart from your MCP client\. &quot;&lt;script&gt;&quot;/);
     assert.match(html, /role="alert"/);
     assert.doesNotMatch(html, /<form\b|<input\b|<button\b|<script\b|synthetic-client|synthetic-csrf/i);
+});
+
+test('consent permits only the validated callback origin while retaining every other policy', () => {
+    for (const uri of ['http://127.0.0.1:52767/callback?state=not-a-policy', 'http://[::1]:52767/callback', 'https://client.fixture.test/callback']) {
+        const policy = consentFormCsp(uri);
+        assert.equal(policy, consentPageCsp.replace("form-action 'self'", `form-action 'self' ${new URL(uri).origin}`));
+        assert.doesNotMatch(policy, /state=|unsafe-inline|\*/);
+    }
+    for (const uri of ['javascript:alert(1)', 'data:text/plain,example', 'not a URL']) assert.throws(() => consentFormCsp(uri));
+    assert.match(consentPageCsp, /form-action 'self';/);
 });

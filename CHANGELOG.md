@@ -9,6 +9,8 @@
 - Support a platform-managed HTTPS ingress with a private HTTP backend, without requiring application certificate files or proxy IP ranges; retain the existing direct TLS and IP-restricted modes.
 - Align OAuth discovery with permitted Crawl scopes and advertise issuer identification for authorization responses.
 - Fix browser consent submissions and provide a responsive authorization screen with clear error and recovery messages.
+- Allow consent and account-switch forms to return to the registered client callback origin without broadening other browser permissions.
+- Keep idle Redis connections active with bounded heartbeats and identify service failures without exposing connection details.
 
 ## 1.0.3
 

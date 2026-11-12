@@ -7,7 +7,7 @@ import { createOAuthHttpHandler } from './oauth-resource.js';
 import type { HttpHandlerOptions } from './http-handler.js';
 import { createRedisAdapterFactory } from './redis/provider-adapter.js';
 import { createRemoteRequestPolicy, mcpEndpointPath } from './remote-request.js';
-import { consentPageCsp, renderConsentError, renderConsentPage } from './consent-page.js';
+import { consentPageCsp, consentFormCsp, renderConsentError, renderConsentPage } from './consent-page.js';
 
 export interface RemoteHandlerOptions extends OAuthProviderOptions {
     trustedProxyCidrs?: readonly string[];
@@ -122,7 +122,7 @@ function configureRemoteHandler(options: RemoteHandlerOptions): RemoteHandler {
         if (response.destroyed || response.writableEnded) return;
         cookie(response, `/oauth/interaction/${uid}`, token, csrfLifetime);
         response.statusCode = status;
-        response.setHeader('Content-Security-Policy', consentPageCsp);
+        response.setHeader('Content-Security-Policy', consentFormCsp(client.callbackOrigin));
         response.setHeader('Content-Type', 'text/html; charset=utf-8');
         response.end(renderConsentPage({ action: `/oauth/interaction/${uid}`, csrf: token, client, error }));
     }

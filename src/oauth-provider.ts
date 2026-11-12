@@ -246,8 +246,11 @@ return n
             ctx.status = 429; ctx.set('Retry-After', '60'); ctx.body = { error: 'temporarily_unavailable' }; return;
         }
         await next();
-        const redirect = ctx.oidc?.params?.redirect_uri;
-        if (typeof redirect === 'string' && ctx.oidc.client?.redirectUriAllowed(redirect)) {
+        // Account-switch confirmation renders before the provider restores request params.
+        const params = ctx.oidc?.params ?? ctx.oidc?.entities.Interaction?.params;
+        const redirect = params?.redirect_uri;
+        const client = ctx.oidc?.client ?? (typeof params?.client_id === 'string' ? await provider.Client.find(params.client_id) : undefined);
+        if (typeof redirect === 'string' && client?.redirectUriAllowed(redirect)) {
             const policy = ctx.response.get('Content-Security-Policy');
             if (policy) ctx.set('Content-Security-Policy', policy.replace(/form-action[^;]*/, `form-action 'self' ${new URL(redirect).origin}`));
         }

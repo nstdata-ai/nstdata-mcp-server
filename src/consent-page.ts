@@ -41,6 +41,13 @@ button:hover{background:#f5f6f9;border-color:#a7acbb}
 
 export const consentPageCsp = `default-src 'none'; style-src 'sha256-${createHash('sha256').update(css).digest('base64')}'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`;
 
+/** Native form redirects must allow the current, client-validated callback origin. */
+export function consentFormCsp(callbackUri: string): string {
+    const callback = new URL(callbackUri);
+    if (callback.protocol !== 'https:' && callback.protocol !== 'http:') throw new Error('Invalid callback origin');
+    return consentPageCsp.replace("form-action 'self'", `form-action 'self' ${callback.origin}`);
+}
+
 const escape = (value: string) => value.replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!);
 
 function frame(title: string, content: string): string {

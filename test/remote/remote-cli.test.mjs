@@ -38,7 +38,7 @@ test('Remote check validates a protected config without contacting its Redis soc
     assert.equal(checked.stderr, ''); assert.match(checked.stdout, /No connection was attempted/);
     const failed = run(['--config', filename]);
     assert.equal(failed.status, 1); assert.equal(failed.stdout, '');
-    assert.equal(failed.stderr, 'Remote service unavailable. Check the protected configuration, TLS files and Redis availability.\n');
+    assert.equal(failed.stderr, 'Remote service unavailable. Check the protected configuration, TLS files and Redis availability. [REDIS_CONNECTION]\n');
     assert.equal(fs.existsSync(config.redis.socketPath), false);
     fs.writeFileSync(filename, '{"token":"secret-fixture-value",');
     const invalid = run(['--config', filename, '--check']);

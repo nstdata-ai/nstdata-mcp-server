@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { loadRemoteConfig, RemoteConfigurationError } from './remote-config.js';
-import { loadRemoteTls, startRemoteService } from './remote-service.js';
+import { loadRemoteTls, startRemoteService, RemoteServiceError } from './remote-service.js';
 
 const usage = `Usage: node <remote.js> --config <absolute-path> [--check]
 
@@ -37,6 +37,6 @@ async function main(args: string[]): Promise<void> {
 try { await main(process.argv.slice(2)); }
 catch (error) {
     console.error(error instanceof RemoteConfigurationError ? error.message
-        : 'Remote service unavailable. Check the protected configuration, TLS files and Redis availability.');
+        : `Remote service unavailable. Check the protected configuration, TLS files and Redis availability.${error instanceof RemoteServiceError ? ` [${error.code}]` : ''}`);
     process.exitCode = 1;
 }
