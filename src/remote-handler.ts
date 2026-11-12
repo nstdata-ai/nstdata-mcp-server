@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { errors } from 'oidc-provider';
 import { createOAuthProvider, type OAuthProviderOptions } from './oauth-provider.js';
@@ -7,6 +7,7 @@ import { createOAuthHttpHandler } from './oauth-resource.js';
 import type { HttpHandlerOptions } from './http-handler.js';
 import { createRedisAdapterFactory } from './redis/provider-adapter.js';
 import { createRemoteRequestPolicy, mcpEndpointPath } from './remote-request.js';
+import { consentPageCsp, renderConsentError, renderConsentPage } from './consent-page.js';
 
 export interface RemoteHandlerOptions extends OAuthProviderOptions {
     trustedProxyCidrs?: readonly string[];
@@ -25,15 +26,7 @@ export interface RemoteHandler {
     close(): Promise<void>;
 }
 
-const css = `body{font:16px/1.5 system-ui,sans-serif;margin:2rem;color:#17212b}
-main{max-width:34rem;margin:4rem auto}
-label{display:block;margin:1rem 0 .4rem}
-input[type=password]{box-sizing:border-box;width:100%;padding:.75rem;font:inherit}
-button{margin:1rem .5rem 0 0;padding:.6rem 1rem;font:inherit}
-p[role=alert]{color:#a12b22}`;
-const csp = `default-src 'none'; style-src 'sha256-${createHash('sha256').update(css).digest('base64')}'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`;
 const cookieName = 'nstdata_oauth_csrf';
-const escape = (value: string) => value.replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!);
 const same = (a: string, b: string) => {
     const x = Buffer.from(a), y = Buffer.from(b);
     return x.length === y.length && timingSafeEqual(x, y);
@@ -46,6 +39,15 @@ function reply(response: ServerResponse, status: number, message: string): void 
         response.setHeader('Content-Type', 'application/json');
     }
     response.end(JSON.stringify({ error: message }));
+}
+
+function consentError(response: ServerResponse, status: number, title: string, message: string): void {
+    if (response.destroyed || response.writableEnded) return;
+    if (response.headersSent) { response.destroy(); return; }
+    response.statusCode = status;
+    response.setHeader('Content-Type', 'text/html; charset=utf-8');
+    response.setHeader('Content-Security-Policy', consentPageCsp);
+    response.end(renderConsentError({ title, message }));
 }
 
 function limit(value: number, maximum: number): number {
@@ -120,32 +122,9 @@ function configureRemoteHandler(options: RemoteHandlerOptions): RemoteHandler {
         if (response.destroyed || response.writableEnded) return;
         cookie(response, `/oauth/interaction/${uid}`, token, csrfLifetime);
         response.statusCode = status;
-        response.setHeader('Content-Security-Policy', csp);
+        response.setHeader('Content-Security-Policy', consentPageCsp);
         response.setHeader('Content-Type', 'text/html; charset=utf-8');
-        response.end(`<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Connect Nstdata</title>
-<style>${css}</style>
-</head>
-<body><main>
-<h1>Connect Nstdata</h1>
-<p>Allow <strong>${escape(client.name)}</strong> to use Nstdata Crawl with your API key. Calls use your Nstdata credits.</p>
-<p>Application ID: <code>${escape(client.id)}</code><br>Return to: <code>${escape(client.callbackOrigin)}</code></p>
-<p>The application name is supplied by its developer. Check the application ID and return address before authorizing.</p>
-<p>The application can renew access until this authorization expires or is revoked. Your key is stored encrypted. Only authorize an application you trust.</p>
-${error ? `<p role="alert">${escape(error)}</p>` : ''}
-<form method="post" action="/oauth/interaction/${uid}">
-<input type="hidden" name="csrf" value="${token}">
-<label for="api-token">Nstdata API key</label>
-<input id="api-token" name="apiToken" type="password" autocomplete="off" spellcheck="false">
-<button name="decision" value="allow" type="submit">Authorize Crawl</button>
-<button name="decision" value="deny" type="submit">Cancel</button>
-</form>
-</main></body>
-</html>`);
+        response.end(renderConsentPage({ action: `/oauth/interaction/${uid}`, csrf: token, client, error }));
     }
     async function consumeCsrf(request: IncomingMessage, uid: string, token: string) {
         const cookies = (request.headers.cookie ?? '').split(';').map(value => value.trim()).filter(value => value.startsWith(`${cookieName}=`));
@@ -162,7 +141,8 @@ ${error ? `<p role="alert">${escape(error)}</p>` : ''}
     return {
         async handle(request, response) {
             response.setHeader('Cache-Control', 'no-store');
-            response.setHeader('Referrer-Policy', 'no-referrer');
+            // Native consent and provider form POSTs need their same-origin Origin header.
+            response.setHeader('Referrer-Policy', 'same-origin');
             response.setHeader('X-Content-Type-Options', 'nosniff');
             response.setHeader('Content-Security-Policy', providerCsp);
             if (closed) { reply(response, 503, 'Service unavailable'); return; }
@@ -172,7 +152,11 @@ ${error ? `<p role="alert">${escape(error)}</p>` : ''}
             const onAbort = () => controller.abort();
             response.once('close', onClose);
             request.once('aborted', onAbort);
-            const timer = setTimeout(() => { reply(response, 503, 'Service unavailable'); controller.abort(); }, timeout);
+            let browserInteraction = false;
+            const unavailable = () => browserInteraction
+                ? consentError(response, 503, 'Authorization unavailable', 'This authorization could not be completed. Return to your application and connect again.')
+                : reply(response, 503, 'Service unavailable');
+            const timer = setTimeout(() => { unavailable(); controller.abort(); }, timeout);
             let restoreNative: (() => void) | undefined;
             try {
                 const rawUrl = request.url ?? '';
@@ -183,9 +167,12 @@ ${error ? `<p role="alert">${escape(error)}</p>` : ''}
                 const origin = request.headers.origin;
                 const isMcp = url.pathname === resource.pathname || url.pathname.startsWith('/.well-known/oauth-');
                 const interaction = /^\/oauth\/interaction\/([A-Za-z0-9_-]{16,256})$/.exec(url.pathname);
+                browserInteraction = interaction !== null;
                 const length = request.headers['content-length'];
                 if (length !== undefined && (!/^\d+$/.test(length) || Number(length) > (interaction ? maxForm : maxBody))) {
-                    reply(response, 413, 'Request too large'); return;
+                    if (interaction) consentError(response, 413, 'Authorization form too large', 'Return to your application and connect again.');
+                    else reply(response, 413, 'Request too large');
+                    return;
                 }
                 if (isMcp) {
                     const authHeaders = request.rawHeaders.filter((_value, index) => index % 2 === 0)
@@ -230,37 +217,55 @@ ${error ? `<p role="alert">${escape(error)}</p>` : ''}
                     response.end(); return;
                 }
                 if (origin !== undefined && origin !== issuer.origin && !allowedOrigins.has(origin)) {
-                    reply(response, 403, 'Forbidden'); return;
+                    if (interaction) consentError(response, 403, 'Authorization blocked', 'The request did not come from this authorization page. Return to your application and connect again.');
+                    else reply(response, 403, 'Forbidden');
+                    return;
                 }
                 if (interaction) {
-                    if (url.search || !['GET', 'POST'].includes(request.method ?? '')) { reply(response, 400, 'Invalid request'); return; }
+                    if (url.search || !['GET', 'POST'].includes(request.method ?? '')) {
+                        consentError(response, 400, 'Invalid authorization request', 'Return to your application and connect again.'); return;
+                    }
                     let details;
                     try { details = await oauth.provider.interactionDetails(request, response); }
-                    catch { reply(response, 400, 'Authorization request expired'); return; }
+                    catch (error) {
+                        if (!(error instanceof errors.SessionNotFound)) throw error;
+                        consentError(response, 400, 'Start a new authorization', 'This authorization is no longer valid. Return to your application and connect again.'); return;
+                    }
                     const uid = interaction[1], clientId = details.params.client_id;
                     const requestedScopes = typeof details.params.scope === 'string' ? details.params.scope.split(' ').filter(Boolean) : [];
                     if (details.uid !== uid || typeof clientId !== 'string' || !requestedScopes.includes('crawl:use') ||
-                        requestedScopes.some(scope => !['crawl:use', 'offline_access'].includes(scope))) { reply(response, 400, 'Invalid authorization request'); return; }
+                        requestedScopes.some(scope => !['crawl:use', 'offline_access'].includes(scope))) {
+                        consentError(response, 400, 'Invalid authorization request', 'Return to your application and connect again.'); return;
+                    }
                     const redirectUri = details.params.redirect_uri;
-                    if (typeof redirectUri !== 'string') { reply(response, 400, 'Invalid authorization request'); return; }
+                    if (typeof redirectUri !== 'string') {
+                        consentError(response, 400, 'Invalid authorization request', 'Return to your application and connect again.'); return;
+                    }
                     const resolved = await oauth.resolveClient(clientId, redirectUri);
                     controller.signal.throwIfAborted();
-                    if (!resolved) { reply(response, 400, 'Invalid authorization request'); return; }
+                    if (!resolved) {
+                        consentError(response, 400, 'Invalid authorization request', 'Return to your application and connect again.'); return;
+                    }
                     const client = { id: clientId, name: resolved.name, callbackOrigin: new URL(redirectUri).origin };
                     if (request.method === 'GET') { await page(response, uid, client); return; }
                     if (origin !== issuer.origin || !/^application\/x-www-form-urlencoded(?:\s*;\s*charset=utf-8)?$/i.test(request.headers['content-type'] ?? '')) {
-                        reply(response, 403, 'Forbidden'); return;
+                        consentError(response, 403, 'Authorization blocked', 'Return to your application and connect again.'); return;
                     }
                     let form;
                     try {
                         const bytes = await bodyBytes(request, AbortSignal.any([controller.signal, AbortSignal.timeout(Math.min(timeout, 10_000))]), maxForm);
                         form = new URLSearchParams(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
                     }
-                    catch (error) { reply(response, error instanceof RangeError ? 413 : 400, 'Invalid form'); return; }
+                    catch (error) {
+                        consentError(response, error instanceof RangeError ? 413 : 400, 'Invalid authorization form', 'Return to your application and connect again.'); return;
+                    }
                     const fields = [...form.keys()];
                     if (new Set(fields).size !== fields.length || fields.some(name => !['csrf', 'apiToken', 'decision'].includes(name)) ||
-                        !['allow', 'deny'].includes(form.get('decision') ?? '') || !await consumeCsrf(request, uid, form.get('csrf') ?? '')) {
-                        reply(response, 403, 'Forbidden'); return;
+                        !['allow', 'deny'].includes(form.get('decision') ?? '')) {
+                        consentError(response, 403, 'Invalid authorization form', 'Return to your application and connect again.'); return;
+                    }
+                    if (!await consumeCsrf(request, uid, form.get('csrf') ?? '')) {
+                        await page(response, uid, client, 403, 'This form is no longer valid. Re-enter your API key to authorize, or cancel.'); return;
                     }
                     cookie(response, url.pathname, '', 0);
                     controller.signal.throwIfAborted();
@@ -301,7 +306,7 @@ ${error ? `<p role="alert">${escape(error)}</p>` : ''}
                 restoreNative = () => { request.iterator = originalIterator; controller.signal.removeEventListener('abort', stopNative); };
                 controller.signal.throwIfAborted();
                 await oauth.callback(request, response, controller.signal);
-            } catch { reply(response, 503, 'Service unavailable'); }
+            } catch { unavailable(); }
             finally {
                 clearTimeout(timer); active.delete(controller);
                 restoreNative?.();

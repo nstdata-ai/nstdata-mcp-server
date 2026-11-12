@@ -8,6 +8,7 @@
 - Allow a configured Remote MCP endpoint such as `/crawl`, retaining `/mcp` as the default and binding OAuth discovery and tokens to the selected resource.
 - Support a platform-managed HTTPS ingress with a private HTTP backend, without requiring application certificate files or proxy IP ranges; retain the existing direct TLS and IP-restricted modes.
 - Align OAuth discovery with permitted Crawl scopes and advertise issuer identification for authorization responses.
+- Fix browser consent submissions and provide a responsive authorization screen with clear error and recovery messages.
 
 ## 1.0.3
 
