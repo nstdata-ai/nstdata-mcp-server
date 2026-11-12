@@ -7,6 +7,7 @@ import type { OAuthHttpHandlerOptions } from './oauth-resource.js';
 import { createRedisAdapterFactory } from './redis/provider-adapter.js';
 import { type CredentialBinding, type RedisCredentialStore } from './redis/credential-store.js';
 import { RedisStoreError, type StoreOptions, validateStoreOptions } from './redis/shared.js';
+import { consentPageCsp, renderCallbackPage, renderConsentError } from './consent-page.js';
 
 export interface OAuthFixedClient {
     clientId: string;
@@ -246,10 +247,31 @@ return n
             ctx.status = 429; ctx.set('Retry-After', '60'); ctx.body = { error: 'temporarily_unavailable' }; return;
         }
         await next();
-        const redirect = ctx.oidc?.params?.redirect_uri;
-        if (typeof redirect === 'string' && ctx.oidc.client?.redirectUriAllowed(redirect)) {
+        // Account-switch confirmation renders before the provider restores request params.
+        const params = ctx.oidc?.params ?? ctx.oidc?.entities.Interaction?.params;
+        const redirect = params?.redirect_uri;
+        const client = ctx.oidc?.client ?? (typeof params?.client_id === 'string' ? await provider.Client.find(params.client_id) : undefined);
+        if (typeof redirect === 'string' && client?.redirectUriAllowed(redirect)) {
+            const callbackUrl = new URL(redirect);
             const policy = ctx.response.get('Content-Security-Policy');
-            if (policy) ctx.set('Content-Security-Policy', policy.replace(/form-action[^;]*/, `form-action 'self' ${new URL(redirect).origin}`));
+            if (callbackUrl.hostname.startsWith('[')) {
+                if (params?.response_mode === 'form_post') {
+                    ctx.remove('Location'); ctx.remove('Content-Length');
+                    ctx.status = 400; ctx.type = 'html';
+                    ctx.set('Content-Security-Policy', consentPageCsp);
+                    ctx.body = renderConsentError({ title: 'Unsupported callback mode',
+                        message: 'Use a query response for an IPv6 callback, or configure an IPv4 or HTTPS hostname callback.' });
+                    return;
+                }
+                const location = ctx.response.get('Location');
+                const destination = location ? new URL(location, issuer) : undefined;
+                if ([302, 303].includes(ctx.status) && destination?.origin === callbackUrl.origin && destination.pathname === callbackUrl.pathname) {
+                    ctx.remove('Location'); ctx.remove('Content-Length');
+                    ctx.status = 200; ctx.type = 'html';
+                    ctx.set('Content-Security-Policy', consentPageCsp);
+                    ctx.body = renderCallbackPage(destination.href);
+                }
+            } else if (policy) ctx.set('Content-Security-Policy', policy.replace(/form-action[^;]*/, `form-action 'self' ${callbackUrl.origin}`));
         }
         if (ctx.status === 200 && ctx.path === '/.well-known/openid-configuration' && ctx.body && typeof ctx.body === 'object') {
             (ctx.body as Record<string, unknown>).scopes_supported = [...scopes];

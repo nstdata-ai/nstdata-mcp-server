@@ -8,6 +8,7 @@ import tls from 'node:tls';
 import { createHash, generateKeyPairSync, randomBytes } from 'node:crypto';
 import { execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { registerHooks } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -227,11 +228,117 @@ test('Redis disconnect fails closed and releases the listener without reconnecti
     const redis = await isolatedRedis(t, { allowedOrigins: () => origins });
     const options = config(await port(), redis.socketPath); origins.push(options.issuerUrl);
     const service = await startRemoteService(options); t.after(() => service.close());
-    const stopped = assert.rejects(service.closed, error => error.message === unavailable);
+    const stopped = assert.rejects(service.closed, error => error.message === unavailable && error.code === 'REDIS_CONNECTION');
     await redis.stop(); await stopped; await service.close();
     const replacement = net.createServer();
     await new Promise((resolve, reject) => { replacement.once('error', reject); replacement.listen(options.listen.port, '127.0.0.1', resolve); });
     await new Promise(resolve => replacement.close(resolve));
+});
+
+async function idleRedis(t, { stallHeartbeat = false, holdAfterStartup = false } = {}) {
+    const ping = '*1\r\n$4\r\nPING\r\n', sockets = new Set();
+    const replies = [];
+    let pings = 0, connections = 0, idleCloses = 0;
+    const redis = net.createServer(socket => {
+        connections++; sockets.add(socket);
+        socket.setTimeout(300, () => { idleCloses++; socket.destroy(); });
+        socket.on('error', () => {});
+        socket.once('close', () => sockets.delete(socket));
+        let buffer = '';
+        socket.on('data', bytes => {
+            buffer += bytes.toString('utf8');
+            while (buffer.startsWith(ping)) {
+                buffer = buffer.slice(ping.length); pings++;
+                if (pings === 1 || (!stallHeartbeat && !holdAfterStartup)) socket.write('+PONG\r\n');
+                else {
+                    socket.setTimeout(0);
+                    if (holdAfterStartup) replies.push(() => socket.write('+PONG\r\n'));
+                }
+            }
+        });
+    });
+    await new Promise(resolve => redis.listen(0, '127.0.0.1', resolve));
+    t.after(async () => { for (const socket of sockets) socket.destroy(); await new Promise(resolve => redis.close(resolve)); });
+    const timeout = globalThis.setTimeout;
+    // Accelerate only the production 30-second heartbeat; command deadlines remain real.
+    t.mock.method(globalThis, 'setTimeout', (callback, milliseconds, ...args) => timeout(callback, milliseconds === 30_000 ? 50 : milliseconds, ...args));
+    return { url: `redis://127.0.0.1:${redis.address().port}/0`, snapshot: () => ({ pings, connections, idleCloses, sockets: sockets.size }),
+        release: () => { holdAfterStartup = false; for (const reply of replies.splice(0)) reply(); } };
+}
+
+test('Redis heartbeat prevents idle disconnects and stops completely on normal shutdown', { timeout: 4000 }, async t => {
+    const redis = await idleRedis(t), options = config(await port());
+    options.redis = { url: redis.url, namespace: options.redis.namespace };
+    const service = await startRemoteService(options); t.after(() => service.close());
+    void service.closed.catch(() => {});
+    await delay(650);
+    assert.equal((await request(options.issuerUrl + '/health/ready')).status, 200);
+    assert(redis.snapshot().pings >= 4, 'application PINGs must keep an otherwise idle Redis connection alive');
+    assert.equal(redis.snapshot().idleCloses, 0); assert.equal(redis.snapshot().connections, 1);
+    await service.close(); await service.closed;
+    const stopped = redis.snapshot().pings;
+    await delay(120);
+    assert.equal(redis.snapshot().pings, stopped); assert.equal(redis.snapshot().sockets, 0);
+});
+
+test('A stalled Redis heartbeat has one in-flight command and exits within its deadline', { timeout: 4500 }, async t => {
+    const redis = await idleRedis(t, { stallHeartbeat: true }), options = config(await port());
+    options.redis = { url: redis.url, namespace: options.redis.namespace };
+    const service = await startRemoteService(options); t.after(() => service.close());
+    const stopped = assert.rejects(service.closed, error => error.message === unavailable && error.code === 'REDIS_TIMEOUT');
+    await stopped; await service.close();
+    assert.equal(redis.snapshot().pings, 2, 'only startup and one non-replayed heartbeat reach Redis');
+    assert.equal(redis.snapshot().connections, 1); assert.equal(redis.snapshot().idleCloses, 0);
+});
+
+test('Normal shutdown interrupts a pending Redis heartbeat without reporting a storage failure', { timeout: 2500 }, async t => {
+    const redis = await idleRedis(t, { stallHeartbeat: true }), options = config(await port());
+    options.redis = { url: redis.url, namespace: options.redis.namespace };
+    const service = await startRemoteService(options); t.after(() => service.close());
+    const deadline = Date.now() + 1000;
+    while (redis.snapshot().pings < 2 && Date.now() < deadline) await delay(5);
+    assert.equal(redis.snapshot().pings, 2);
+    await service.close(); await service.closed;
+    await delay(120);
+    assert.equal(redis.snapshot().pings, 2); assert.equal(redis.snapshot().connections, 1);
+    assert.equal(redis.snapshot().sockets, 0);
+});
+
+test('Redis heartbeat retains a bounded slot while all 64 application command slots are occupied', { timeout: 3500 }, async t => {
+    const serviceUrl = new URL('./remote-service.js?heartbeat-admission', pathToFileURL(await fs.realpath(remoteCli)));
+    const originalShared = new URL('./redis/shared.js', serviceUrl).href;
+    const wrappedShared = originalShared + '?heartbeat-admission';
+    const hooks = registerHooks({
+        resolve(specifier, context, next) {
+            if (context.parentURL === serviceUrl.href && specifier === './redis/shared.js') return { url: wrappedShared, shortCircuit: true };
+            return next(specifier, context);
+        },
+        load(url, context, next) {
+            if (url !== wrappedShared) return next(url, context);
+            return { format: 'module', shortCircuit: true, source: `export * from ${JSON.stringify(originalShared)};
+import { limitRedisCommands as original } from ${JSON.stringify(originalShared)};
+export let admitted;
+export function limitRedisCommands(command) { admitted = original(command); return admitted; }` };
+        },
+    });
+    t.after(() => hooks.deregister());
+    const { startRemoteService: start } = await import(serviceUrl);
+    const wrapped = await import(wrappedShared);
+    hooks.deregister();
+    const redis = await idleRedis(t, { holdAfterStartup: true }), options = config(await port());
+    options.redis = { url: redis.url, namespace: options.redis.namespace };
+    const service = await start(options); t.after(() => service.close());
+    void service.closed.catch(() => {});
+    const commands = Array.from({ length: 64 }, () => wrapped.admitted(['PING']));
+    const completed = Promise.all(commands); void completed.catch(() => {});
+    await assert.rejects(wrapped.admitted(['PING']), error => error.name === 'RedisStoreError');
+    const deadline = Date.now() + 1000;
+    while (redis.snapshot().pings < 66 && Date.now() < deadline) await delay(5);
+    assert.equal(redis.snapshot().pings, 66, 'startup, 64 admitted application commands, and one heartbeat reach Redis');
+    assert.equal((await request(options.issuerUrl + '/health/ready')).status, 200);
+    redis.release(); await completed;
+    await service.close(); await service.closed;
+    assert.equal(redis.snapshot().connections, 1);
 });
 
 test('Remote startup bounds a Redis authentication handshake and destroys the stalled socket', { timeout: 9000 }, async t => {

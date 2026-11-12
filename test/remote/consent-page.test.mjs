@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { remoteCli as cli } from '../helpers.mjs';
 
-const { renderConsentPage, renderConsentError, consentPageCsp } = await import(new URL('./consent-page.js', pathToFileURL(cli)));
+const { renderConsentPage, renderConsentError, renderCallbackPage, consentPageCsp, consentFormCsp } = await import(new URL('./consent-page.js', pathToFileURL(cli)));
 const options = {
     action: '/oauth/interaction/synthetic-interaction',
     csrf: 'synthetic-csrf',
@@ -79,4 +79,24 @@ test('expired and rejected interactions render actionable escaped text without a
     assert.match(html, /Restart from your MCP client\. &quot;&lt;script&gt;&quot;/);
     assert.match(html, /role="alert"/);
     assert.doesNotMatch(html, /<form\b|<input\b|<button\b|<script\b|synthetic-client|synthetic-csrf/i);
+});
+
+test('consent permits only the validated callback origin while retaining every other policy', () => {
+    for (const uri of ['http://127.0.0.1:52767/callback?state=not-a-policy', 'https://client.fixture.test/callback']) {
+        const policy = consentFormCsp(uri);
+        assert.equal(policy, consentPageCsp.replace("form-action 'self'", `form-action 'self' ${new URL(uri).origin}`));
+        assert.doesNotMatch(policy, /state=|unsafe-inline|\*/);
+    }
+    for (const uri of ['javascript:alert(1)', 'data:text/plain,example', 'not a URL']) assert.throws(() => consentFormCsp(uri));
+    assert.equal(consentFormCsp('http://[::1]:52767/callback'), consentPageCsp);
+    assert.match(consentPageCsp, /form-action 'self';/);
+});
+
+test('IPv6 return page preserves the callback in escaped navigation and fallback without scripts', () => {
+    const uri = 'http://[::1]:52767/callback?code=synthetic&state=%22%3E%3Cscript%3E&iss=https%3A%2F%2Fissuer.invalid';
+    const html = renderCallbackPage(uri), escaped = uri.replaceAll('&', '&amp;');
+    assert(html.includes(`<meta http-equiv="refresh" content="0;url=${escaped}">`));
+    assert(html.includes(`<a href="${escaped}">continue to your application</a>`));
+    assert.doesNotMatch(html, /<form\b|<input\b|<script\b|\son\w+=/i);
+    for (const value of ['javascript:alert(1)', 'data:text/html,example', 'http://user:password@[::1]/']) assert.throws(() => renderCallbackPage(value));
 });

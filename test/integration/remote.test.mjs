@@ -45,7 +45,7 @@ for (const mcpPath of ['/mcp', '/crawl']) test(`actual Remote consent, OAuth and
     origin = `http://127.0.0.1:${server.address().port}`;
     origins.push(origin);
     const resource = `${origin}${mcpPath}`, alternatePath = mcpPath === '/mcp' ? '/crawl' : '/mcp';
-    const clients = ['A', 'B'].map(label => ({ clientId: `client-${label}`, name: label === 'A' ? 'Client <A> & Team' : 'Client B', clientSecret: `synthetic-confidential-client-secret-${label}`, redirectUris: [`${origin}/callback/${label}`] }));
+    const clients = ['A', 'B'].map(label => ({ clientId: `client-${label}`, name: label === 'A' ? 'Client <A> & Team' : 'Client B', clientSecret: `synthetic-confidential-client-secret-${label}`, redirectUris: [`${label === 'B' ? 'http://127.0.0.1:65432' : origin}/callback/${label}`] }));
     clients.push({ clientId: 'client-form-post', clientSecret: 'synthetic-confidential-form-post-secret', redirectUris: ['https://configured-callback.invalid/oauth/callback'] });
     const authorizations = [], grantWrites = new Set(), mcpClients = [];
     let storeUnavailable = false;
@@ -100,6 +100,8 @@ for (const mcpPath of ['/mcp', '/crawl']) test(`actual Remote consent, OAuth and
         if (client.name === 'Client <A> & Team') assert(html.includes('Client &lt;A&gt; &amp; Team') && !html.includes(client.name), 'configured client display name is escaped');
         assert(form.status === 200 && /name="apiToken" type="password"/.test(html) && !/name="apiToken"[^>]*value=/.test(html));
         assert.equal(form.headers.get('referrer-policy'), 'same-origin', 'native form POSTs must retain a same-origin Origin');
+        const formDirective = form.headers.get('content-security-policy').split(';').find(value => value.trim().startsWith('form-action ')).trim();
+        assert.equal(formDirective, `form-action 'self' ${new URL(client.redirectUris[0]).origin}`, 'native form redirects permit only this validated callback origin');
         assert(form.headers.getSetCookie().some(cookie => cookie.startsWith('nstdata_oauth_csrf=') && cookie.includes('HttpOnly') && cookie.includes('SameSite=Strict') && cookie.includes(`Path=${url.pathname};`)));
         const csrf = /name="csrf" value="([^"]+)"/.exec(html)?.[1]; assert(csrf);
         return { ...target, page, client, verifier, state, url, csrf };
@@ -125,6 +127,8 @@ for (const mcpPath of ['/mcp', '/crawl']) test(`actual Remote consent, OAuth and
                 const next = new URL(action, flow.origin), policy = response.headers.get('content-security-policy') ?? '';
                 assert.equal(response.headers.get('referrer-policy'), 'same-origin', 'provider account-switch form POSTs need the same policy');
                 assert(next.origin === flow.origin && next.pathname === '/session/end/confirm' && script);
+                assert.equal(policy.split(';').find(value => value.trim().startsWith('form-action ')).trim(),
+                    `form-action 'self' ${new URL(flow.client.redirectUris[0]).origin}`, 'account-switch form retains its stored validated callback origin');
                 assert((policy.split(';').find(value => value.trim().startsWith('script-src ')) ?? '').includes(`'sha256-${createHash('sha256').update(script).digest('base64')}'`));
                 const fields = new URLSearchParams([...html.matchAll(/<input[^>]*name="([^"]+)"[^>]*value="([^"]*)"/g)].map(match => [match[1], match[2]]));
                 assert(fields.size === 2 && fields.get('xsrf') && fields.get('logout') === 'yes');

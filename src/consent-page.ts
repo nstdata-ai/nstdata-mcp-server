@@ -41,14 +41,24 @@ button:hover{background:#f5f6f9;border-color:#a7acbb}
 
 export const consentPageCsp = `default-src 'none'; style-src 'sha256-${createHash('sha256').update(css).digest('base64')}'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`;
 
+/** Native form redirects must allow the current, client-validated callback origin. */
+export function consentFormCsp(callbackUri: string): string {
+    const callback = new URL(callbackUri);
+    if (callback.protocol !== 'https:' && callback.protocol !== 'http:') throw new Error('Invalid callback origin');
+    // Browsers cannot represent IPv6 literals as CSP host sources; use the return page instead.
+    if (callback.hostname.startsWith('[')) return consentPageCsp;
+    return consentPageCsp.replace("form-action 'self'", `form-action 'self' ${callback.origin}`);
+}
+
 const escape = (value: string) => value.replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!);
 
-function frame(title: string, content: string): string {
+function frame(title: string, content: string, returnUrl?: string): string {
     return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+${returnUrl ? `<meta http-equiv="refresh" content="0;url=${escape(returnUrl)}">` : ''}
 <title>${escape(title)} · Nstdata</title>
 <style>${css}</style>
 </head>
@@ -100,4 +110,12 @@ export function renderConsentError({ title, message }: { title: string; message:
 <h1 id="page-title">${escape(title)}</h1>
 <p class="error-message">${escape(message)}</p>
 </div>`);
+}
+
+/** End the form redirect chain before navigating to a validated IPv6 callback. */
+export function renderCallbackPage(callbackUri: string): string {
+    const callback = new URL(callbackUri);
+    if (!['http:', 'https:'].includes(callback.protocol) || callback.username || callback.password) throw new Error('Invalid callback URL');
+    return frame('Return to your application', `<h1 id="page-title">Return to your application</h1>
+<p class="intro">If you are not redirected, <a href="${escape(callback.href)}">continue to your application</a>.</p>`, callback.href);
 }

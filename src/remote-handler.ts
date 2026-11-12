@@ -7,7 +7,7 @@ import { createOAuthHttpHandler } from './oauth-resource.js';
 import type { HttpHandlerOptions } from './http-handler.js';
 import { createRedisAdapterFactory } from './redis/provider-adapter.js';
 import { createRemoteRequestPolicy, mcpEndpointPath } from './remote-request.js';
-import { consentPageCsp, renderConsentError, renderConsentPage } from './consent-page.js';
+import { consentPageCsp, consentFormCsp, renderConsentError, renderConsentPage } from './consent-page.js';
 
 export interface RemoteHandlerOptions extends OAuthProviderOptions {
     trustedProxyCidrs?: readonly string[];
@@ -122,7 +122,7 @@ function configureRemoteHandler(options: RemoteHandlerOptions): RemoteHandler {
         if (response.destroyed || response.writableEnded) return;
         cookie(response, `/oauth/interaction/${uid}`, token, csrfLifetime);
         response.statusCode = status;
-        response.setHeader('Content-Security-Policy', consentPageCsp);
+        response.setHeader('Content-Security-Policy', consentFormCsp(client.callbackOrigin));
         response.setHeader('Content-Type', 'text/html; charset=utf-8');
         response.end(renderConsentPage({ action: `/oauth/interaction/${uid}`, csrf: token, client, error }));
     }
@@ -247,6 +247,9 @@ function configureRemoteHandler(options: RemoteHandlerOptions): RemoteHandler {
                         consentError(response, 400, 'Invalid authorization request', 'Return to your application and connect again.'); return;
                     }
                     const client = { id: clientId, name: resolved.name, callbackOrigin: new URL(redirectUri).origin };
+                    if (new URL(redirectUri).hostname.startsWith('[') && details.params.response_mode === 'form_post') {
+                        consentError(response, 400, 'Unsupported callback mode', 'Use a query response for an IPv6 callback, or configure an IPv4 or HTTPS hostname callback.'); return;
+                    }
                     if (request.method === 'GET') { await page(response, uid, client); return; }
                     if (origin !== issuer.origin || !/^application\/x-www-form-urlencoded(?:\s*;\s*charset=utf-8)?$/i.test(request.headers['content-type'] ?? '')) {
                         consentError(response, 403, 'Authorization blocked', 'Return to your application and connect again.'); return;

@@ -48,6 +48,7 @@ Remote 是从本仓库构建的独立应用，不包含在本地 `@nstdata-ai/mc
 - Node.js 22 系列的 22.18+ 或 Node.js 24 LTS 系列的 24.11+，以及稳定的公网 HTTPS origin。证书可由现有网关统一管理，或由应用直接加载。
 - 采用持久化、`noeviction`、独立命名空间的单机 Redis，并授予 adapter 所需的键／Lua 权限。使用验证证书的 TLS（`rediss:`）或受保护的本地 Unix socket；不支持 Cluster、Sentinel。
 - 公共客户端使用 authorization code 和 S256 PKCE。服务支持 Client ID Metadata Documents（CIMD）及动态客户端注册（DCR），预登记 confidential 客户端为可选方式，不需要逐设备分发 client secret。
+- IPv6 回调通过浏览器返回页跳转，支持 query 响应。IPv6 回调与 `form_post` 的组合会在征求同意前被拒绝；请使用 query 响应，或改用 IPv4／HTTPS 域名回调。
 
 ## HTTPS 入口方式
 
@@ -164,9 +165,9 @@ node remote/dist/remote.js --config /absolute/path/remote.json
 
 `--check` 检查配置；直 TLS 模式还检查TLS文件及证书／私钥匹配，不连接 Redis、不监听端口，也不调用 Nstdata。校验成功不证明 DNS、证书信任链、Redis ACL 或平台兼容性。
 
-启动先连接 Redis 并确认 `PING` 成功，之后才监听。完整连接过程上限 5 秒，命令上限 2 秒。Redis 故障或超时会停止服务，不自动重连或重放命令。超时写入可能已经执行；重试授权操作前需先排查实际状态。
+启动先连接 Redis 并确认 `PING` 成功，之后才监听。运行期间每隔 30 秒串行发送一次 `PING`，保持空闲连接活跃。完整连接过程上限 5 秒；命令（含心跳）上限 2 秒。Redis 故障或超时会停止服务，不自动重连或重放命令。故障日志包含 `REDIS_CONNECTION`、`REDIS_TIMEOUT` 等固定分类，不包含连接详情或凭据。超时写入可能已经执行；重试授权操作前需先排查实际状态。
 
-每个进程最多接受256个并发连接、32个活动业务请求和64条在途Redis命令。超额工作会被拒绝，不排队、不重试；达到这些容量上限不会停止服务。TLS握手和请求头期限为10秒，请求处理上限为130秒；开放公网访问前，按实际容量配置部署层流量限制。
+每个进程最多接受256个并发连接、32个活动业务请求和64条在途Redis业务命令，心跳使用一个独立槽位。超额工作会被拒绝，不排队、不重试；达到这些容量上限不会停止服务。TLS握手和请求头期限为10秒，请求处理上限为130秒；开放公网访问前，按实际容量配置部署层流量限制。
 
 | 入口 | 含义 |
 |---|---|
