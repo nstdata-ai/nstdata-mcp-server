@@ -97,7 +97,7 @@ test('Remote configuration rejects unknown properties, coercion and malformed ne
         input => { input.jwks.keys[0].extra = 'synthetic-private-value'; },
         input => { input.listen.port = '8443'; }, input => { input.listen.port = 0; }, input => { input.listen.port = 65536; },
         input => { input.listen.port = NaN; }, input => { input.listen.host = 'localhost'; },
-        input => { input.clients = []; }, input => { input.cookieKeys = []; }, input => { input.encryptionKeys = {}; },
+        input => { input.clients = null; }, input => { input.cookieKeys = []; }, input => { input.encryptionKeys = {}; },
         input => { input.clients = Array.from({ length: 33 }, (_, i) => ({ ...input.clients[0], clientId: 'client-' + i })); },
     ]) invalid(change);
 });
@@ -241,4 +241,11 @@ test('Remote ingress TLS termination rejects conflicting transport settings and 
         invalid(input => { delete input.listen.tls; input.tlsTermination = mode; });
     }
     invalid(input => { input.issuerUrl = 'http://127.0.0.1:8080'; input.listen = { host: '127.0.0.1', port: 8080 }; input.tlsTermination = 'ingress'; });
+});
+
+test('Remote configuration supports automatic onboarding without fixed client secrets', () => {
+    const explicit = fixture(); explicit.clients = [];
+    assert.deepEqual(parseRemoteConfig(explicit).clients, []);
+    const omitted = fixture(); delete omitted.clients;
+    assert.deepEqual(parseRemoteConfig(omitted).clients, []);
 });

@@ -136,3 +136,28 @@ test('a pending save uses one detached payload snapshot for keys and stored JSON
     release(1);
     await save;
 });
+
+test('only Client registrations use durable bounded storage without token TTL exemptions', async () => {
+    const commands = [];
+    let result = 1;
+    const Adapter = createRedisAdapterFactory(configuration(async args => { commands.push(args); return result; }));
+    const client = new Adapter('Client');
+    const payload = { client_id: 'public-client', token_endpoint_auth_method: 'none', redirect_uris: ['http://127.0.0.1/callback'] };
+    await client.upsert('public-client', payload);
+    assert.equal(commands[0][0], 'EVAL');
+    assert.match(commands[0][1], /ZCARD/);
+    assert.match(commands[0][1], /ZREMRANGEBYSCORE/);
+    assert.equal(commands[0].at(-1), '3900', 'client inactivity window exceeds maximum grant/token lifetime');
+    await assert.rejects(client.upsert('different-client', payload));
+    await assert.rejects(client.upsert('public-client', payload, 300));
+    result = JSON.stringify(payload);
+    assert.deepEqual(await client.find('public-client'), payload);
+    assert.equal(commands.at(-1)[0], 'EVAL');
+    assert.match(commands.at(-1)[1], /EXPIRE/);
+    result = 0;
+    await assert.rejects(client.upsert('public-client', payload), RedisStoreError);
+    result = 1;
+    await client.destroy('public-client');
+    assert.match(commands.at(-1)[1], /ZREM/);
+    await assert.rejects(new Adapter('RefreshToken').upsert('id', { ...grantPayload(), grantId: 'grant' }));
+});

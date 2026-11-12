@@ -325,3 +325,79 @@ test('close aborts the per-request verifier signal and makes MCP plus metadata u
     }
     assert.equal(requests.length, 0);
 });
+
+test('direct-key authentication rejects ambiguous credentials and never falls back from OAuth', async t => {
+    const requests = guardNetwork(t);
+    let keys = 0, tokens = 0;
+    const h = handler(t, {
+        verifyCredential: async () => { tokens++; return null; },
+        verifyApiKey: async key => { keys++; return { subject: 'api-key:virtual', apiToken: key }; },
+    });
+    for (const header of ['', 'virtual-A, virtual-B']) {
+        const response = await h.fetch(post('malformed JSON', undefined, { 'X-API-Key': header }));
+        assert.equal(response.status, 401);
+        assert.equal(response.headers.has('www-authenticate'), false);
+        await response.text();
+    }
+    const mixed = await h.fetch(post('malformed JSON', 'Bearer rejected-key', { 'X-API-Key': 'fixture-private' }));
+    assert.equal(mixed.status, 400);
+    assert.doesNotMatch(await mixed.text(), /fixture-private|rejected-key/);
+    assert.equal(keys, 0); assert.equal(tokens, 0);
+    const rejected = await h.fetch(post('malformed JSON', 'Bearer fixture-private'));
+    assert.equal(rejected.status, 401);
+    await rejected.text();
+    assert.equal(keys, 0); assert.equal(tokens, 1);
+    assert.equal(requests.length, 0);
+});
+
+test('direct-key denial, upstream failure and close produce bounded generic responses without OAuth fallback', async t => {
+    const requests = guardNetwork(t);
+    for (const [verifyApiKey, status] of [
+        [undefined, 401], [async () => null, 401],
+        [async () => { throw new Error('fixture-private'); }, 503],
+        [async () => ({ subject: 'virtual', apiToken: 'different-fixture-private' }), 401],
+    ]) {
+        const h = handler(t, { verifyApiKey, verifyCredential: async () => assert.fail('must not fall back') });
+        const response = await h.fetch(post('malformed JSON', undefined, { 'X-API-Key': 'fixture-private' }));
+        assert.equal(response.status, status);
+        assert.equal(response.headers.get('cache-control'), 'no-store');
+        assert.doesNotMatch(await response.text(), /fixture-private/);
+    }
+    const started = deferred(), release = deferred();
+    const h = handler(t, { verifyApiKey: async (key, signal) => {
+        started.resolve(); await release.promise;
+        assert(signal.aborted);
+        return { subject: 'virtual', apiToken: key };
+    } });
+    const pending = h.fetch(post({}, undefined, { 'X-API-Key': 'fixture-private' }));
+    await started.promise; await h.close(); release.resolve();
+    assert.equal((await pending).status, 503);
+    assert.equal(requests.length, 0);
+});
+
+for (const era of ['modern', 'legacy']) {
+    test(`${era} direct keys use the same six tools and isolate interleaved upstream requests`, async t => {
+        const requests = guardNetwork(t, request => {
+            assert.equal(request.method, 'GET');
+            return envelope({ status: 'processing', pending: request.headers.get('x-api-key') === 'fixture-A' ? 1 : 2 });
+        });
+        const h = handler(t, { verifyCredential: async () => assert.fail('OAuth verifier reached'),
+            verifyApiKey: async key => ['fixture-A', 'fixture-B'].includes(key) ? { subject: `api-key:${key.at(-1)}`, apiToken: key } : null });
+        const connect = async key => {
+            const c = new Client({ name: 'direct-key-fixture', version: '1.0.0' }, {
+                versionNegotiation: { mode: era === 'modern' ? { pin: '2026-07-28' } : 'legacy' },
+            });
+            t.after(() => c.close());
+            await c.connect(new StreamableHTTPClientTransport(new URL(resourceUrl), {
+                requestInit: { headers: { 'X-API-Key': key } }, fetch: (input, init) => h.fetch(new Request(input, init)),
+            }));
+            return c;
+        };
+        const [a, b] = await Promise.all([connect('fixture-A'), connect('fixture-B')]);
+        assert.deepEqual((await a.listTools()).tools.map(tool => tool.name).sort(), tools);
+        const results = await Promise.all([a.callTool({ name: 'nstdata_crawl_status', arguments: { crawlId: 'existing-A' } }),
+            b.callTool({ name: 'nstdata_crawl_status', arguments: { crawlId: 'existing-B' } })]);
+        assert.deepEqual(results.map(result => result.structuredContent.pending), [1, 2]);
+        assert.deepEqual(requests.map(request => request.headers.get('x-api-key')).sort(), ['fixture-A', 'fixture-B']);
+    });
+}

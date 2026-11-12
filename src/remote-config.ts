@@ -61,7 +61,7 @@ const configuration = z.strictObject({
         clientId: z.string().min(1).max(256).regex(/^[^\s\u0000-\u001f\u007f]+$/u), clientSecret: secret,
         redirectUris: z.array(z.string().min(1).max(8192)).min(1).max(16),
         name: z.string().min(1).max(100).refine(value => value.trim().length > 0 && !/[\u0000-\u001f\u007f]/u.test(value)).optional(),
-    })).min(1).max(32),
+    })).max(32).default([]),
     cookieKeys: z.array(secret).min(1).max(8),
     jwks: z.strictObject({ keys: z.array(jwk).min(1).max(8) }),
     encryptionKeys: z.record(keyId, base64Key).refine(value => Object.keys(value).length >= 1 && Object.keys(value).length <= 16),
