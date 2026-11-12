@@ -196,14 +196,21 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthProvide
             },
         });
     } catch { throw new Error('Invalid OAuth provider configuration'); }
+    // The provider retains OpenID internals; advertise only our fixed clients' allowed OAuth scopes.
+    provider.use(async (ctx, next) => {
+        await next();
+        if (ctx.status === 200 && ctx.path === '/.well-known/openid-configuration' && ctx.body && typeof ctx.body === 'object') {
+            (ctx.body as Record<string, unknown>).scopes_supported = [...scopes];
+        }
+    });
     provider.proxy = false;
     const callback = provider.callback();
     const metadata: OAuthMetadata = {
         issuer: provider.issuer, authorization_endpoint: provider.urlFor('authorization'), token_endpoint: provider.urlFor('token'),
         jwks_uri: provider.urlFor('jwks'), revocation_endpoint: provider.urlFor('revocation'), introspection_endpoint: provider.urlFor('introspection'),
         response_types_supported: ['code'], grant_types_supported: ['authorization_code', 'refresh_token'],
-        // The provider retains its OpenID internals; fixed client scope rejects openid requests.
-        token_endpoint_auth_methods_supported: ['client_secret_basic'], code_challenge_methods_supported: ['S256'], scopes_supported: [...scopes, 'openid'],
+        authorization_response_iss_parameter_supported: true,
+        token_endpoint_auth_methods_supported: ['client_secret_basic'], code_challenge_methods_supported: ['S256'], scopes_supported: [...scopes],
     };
 
     return {
