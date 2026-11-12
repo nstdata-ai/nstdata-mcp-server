@@ -2,7 +2,7 @@
 
 [中文](README_zh.md)
 
-Use Nstdata Crawl and HTTP/HTTPS proxies from Cursor, Codex or Claude Code. This plugin starts the published `@nstdata-ai/mcp-server@1.0.2` package as a local stdio process. It provides tools for webpage retrieval, bounded website crawls, task resumption, paginated results and reference reading. Optional Proxy tools fetch a target through an existing proxy or check its response.
+Use Nstdata Crawl and HTTP/HTTPS proxies from Cursor, Codex or Claude Code. This plugin starts the published `@nstdata-ai/mcp-server@1.0.3` package as a local stdio process. It provides tools for webpage retrieval, bounded website crawls, task resumption, paginated results and reference reading. Optional Proxy tools fetch a target through an existing proxy or check its response.
 
 ## Requirements and setup
 

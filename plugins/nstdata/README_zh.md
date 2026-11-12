@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-在 Cursor、Codex 或 Claude Code 中使用 Nstdata Crawl 和 HTTP/HTTPS 代理。插件通过本地 stdio 进程启动已发布的 `@nstdata-ai/mcp-server@1.0.2`，支持网页抓取、有界整站任务、任务接续、分页及正文引用读取。可选 Proxy 工具通过已有代理请求目标，或检查响应。
+在 Cursor、Codex 或 Claude Code 中使用 Nstdata Crawl 和 HTTP/HTTPS 代理。插件通过本地 stdio 进程启动已发布的 `@nstdata-ai/mcp-server@1.0.3`，支持网页抓取、有界整站任务、任务接续、分页及正文引用读取。可选 Proxy 工具通过已有代理请求目标，或检查响应。
 
 ## 环境与配置
 

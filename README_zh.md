@@ -15,7 +15,8 @@
 | Cursor | 下方 JSON 或[市场插件](docs/mcp_zh.md#可选-cursor-插件) |
 | Codex | 下方 TOML 或[市场插件](docs/mcp_zh.md#可选-codex-插件) |
 | Claude Code | [CLI 配置](docs/mcp_zh.md#claude-code-cli)或[市场插件](docs/mcp_zh.md#可选-claude-code-插件) |
-| Claude Desktop、Cline、Roo Code、Gemini CLI、Windsurf | [客户端配置](docs/mcp_zh.md#客户端接入) |
+| Gemini CLI | [Crawl 扩展](docs/mcp_zh.md#gemini-cli-扩展)或[手动 MCP 配置](docs/mcp_zh.md#json-stdio-配置) |
+| Claude Desktop、Cline、Windsurf | [客户端配置](docs/mcp_zh.md#客户端接入) |
 | VS Code / GitHub Copilot | [IDE 与 CLI 配置](docs/mcp_zh.md#vs-code-与-github-copilot) |
 | OpenCode | [OpenCode 配置](docs/mcp_zh.md#opencode) |
 

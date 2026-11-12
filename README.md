@@ -15,7 +15,8 @@ Requires Node.js 22 (22.18 or later) or 24, with `npx` on PATH. Get a Crawl API 
 | Cursor | JSON below or the [marketplace plugin](docs/mcp.md#optional-cursor-plugin) |
 | Codex | TOML below or the [marketplace plugin](docs/mcp.md#optional-codex-plugin) |
 | Claude Code | [CLI setup](docs/mcp.md#claude-code-cli) or the [marketplace plugin](docs/mcp.md#optional-claude-code-plugin) |
-| Claude Desktop, Cline, Roo Code, Gemini CLI, Windsurf | [Client configuration](docs/mcp.md#client-setup) |
+| Gemini CLI | [Crawl extension](docs/mcp.md#gemini-cli-extension) or [manual MCP configuration](docs/mcp.md#json-stdio-configuration) |
+| Claude Desktop, Cline, Windsurf | [Client configuration](docs/mcp.md#client-setup) |
 | VS Code / GitHub Copilot | [IDE and CLI configuration](docs/mcp.md#vs-code-and-github-copilot) |
 | OpenCode | [OpenCode configuration](docs/mcp.md#opencode) |
 

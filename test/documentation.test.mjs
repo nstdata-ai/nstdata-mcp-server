@@ -17,7 +17,7 @@ test('the standalone plugin includes its own installation guide and MIT license'
     const chinese = fs.readFileSync(new URL('README_zh.md', directory), 'utf8');
     const versions = ['.codex-plugin', '.cursor-plugin', '.claude-plugin'].map(name =>
         JSON.parse(fs.readFileSync(new URL(`${name}/plugin.json`, directory), 'utf8')).version);
-    assert.equal(new Set(versions).size, 1, 'Native plugins must select the same server release');
+    assert.deepEqual(versions, [version, version, version], 'Native plugins must select the current server release');
     for (const text of [readme, chinese]) assert.ok(text.includes(`@nstdata-ai/mcp-server@${versions[0]}`));
     assert.ok(readme.replace(/```[\s\S]*?```/g, '').trim().split(/\s+/).length >= 40);
     assert.match(readme, /\[中文\]\(README_zh\.md\)/);
@@ -101,6 +101,25 @@ test('Codex plugin starts the pinned package and forwards required and optional 
     assert.equal(loadConfig({ NSTDATA_API_TOKEN: 'fixture-token' }).modules, 'crawl');
 });
 
+test('Gemini extension uses the published Crawl server and a client-managed sensitive setting', () => {
+    const read = file => JSON.parse(fs.readFileSync(new URL('../' + file, import.meta.url), 'utf8'));
+    const extension = read('gemini-extension.json');
+    const version = read('package.json').version;
+    assert.equal(extension.name, 'nstdata');
+    assert.equal(extension.version, version);
+    assert.deepEqual(Object.keys(extension.mcpServers), ['nstdata']);
+    const server = extension.mcpServers.nstdata;
+    assert.equal(server.command, 'npx');
+    assert.deepEqual(server.args, ['--yes', `@nstdata-ai/mcp-server@${version}`]);
+    assert.deepEqual(server.env, { NSTDATA_MODULES: 'crawl', NSTDATA_API_TOKEN: '${NSTDATA_API_TOKEN:-}' });
+    assert.equal(extension.settings.length, 1);
+    assert.equal(extension.settings[0].envVar, 'NSTDATA_API_TOKEN');
+    assert.equal(extension.settings[0].sensitive, true);
+    assert.ok(extension.settings[0].name && extension.settings[0].description);
+    assert.equal(loadConfig({ ...server.env, NSTDATA_API_TOKEN: 'fixture-token' }).modules, 'crawl');
+    assert.throws(() => loadConfig({ ...server.env, NSTDATA_API_TOKEN: '' }));
+});
+
 test('bilingual client setup preserves the pinned command, credential mapping and registration commands', () => {
     const readmes = ['README.md', 'README_zh.md'].map(file =>
         fs.readFileSync(new URL('../' + file, import.meta.url), 'utf8'));
@@ -128,8 +147,14 @@ test('bilingual client setup preserves the pinned command, credential mapping an
             ['claude', 'plugin', 'marketplace', 'add', 'nstdata-ai/nstdata-mcp-server'],
             ['claude', 'plugin', 'install', 'nstdata@nstdata'],
             ['claude', 'plugin', 'marketplace', 'update', 'nstdata'],
-            ['claude', 'plugin', 'update', 'nstdata@nstdata']]);
-        const blocks = [...text.matchAll(/```dotenv\n([\s\S]*?)```/g)].map(block => parseEnv(block[1]));
+            ['claude', 'plugin', 'update', 'nstdata@nstdata'],
+            ['gemini', 'extensions', 'install', 'https://github.com/nstdata-ai/nstdata-mcp-server'],
+            ['gemini', 'extensions', 'config', 'nstdata', 'NSTDATA_API_TOKEN', '--scope', 'user'],
+            ['gemini', 'extensions', 'list'],
+            ['gemini', 'mcp', 'list'],
+            ['gemini', 'extensions', 'update', 'nstdata'],
+            ['gemini', 'extensions', 'uninstall', 'nstdata']]);
+        const blocks = [...text.matchAll(/```dotenv\n([\s\S]*?)```/g)].map(block => ({ ...parseEnv(block[1]) }));
         assert.deepEqual(blocks, [{ NSTDATA_API_TOKEN: 'your-api-key' }]);
         assert.equal(loadConfig(blocks[0]).modules, 'crawl');
     }

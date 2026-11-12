@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Client distribution
+
+- Pin Cursor, Codex and Claude Code plugins to the 1.0.3 stdio package.
+- Add a Gemini CLI Crawl extension with client-managed sensitive configuration.
+
 ### Self-hosted Remote application
 
 - Add a separate Remote MCP application and container build, keeping OAuth and Redis dependencies and runtime output outside the stdio npm package.
