@@ -260,7 +260,10 @@ test('automatic Remote onboarding uses public OAuth clients and independent per-
                 assert.equal(Object.keys(parameters).join(','), 'scope');
                 const denied = await page.fetch(next);
                 assert.equal(denied.status, 400);
-                assert.equal((await denied.json()).error, 'Invalid authorization request');
+                const html = await denied.text();
+                assert.match(denied.headers.get('content-type'), /^text\/html/);
+                assert.match(html, /Invalid authorization request/);
+                assert.doesNotMatch(html, /<form\b|name="apiToken"/); noKey(html);
             } else if (next) assert(next.searchParams.has('error'));
             else assert(response.status >= 400 && response.status < 500);
             noKey(await response.text());

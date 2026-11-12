@@ -48,6 +48,7 @@ for (const mcpPath of ['/mcp', '/crawl']) test(`actual Remote consent, OAuth and
     const clients = ['A', 'B'].map(label => ({ clientId: `client-${label}`, name: label === 'A' ? 'Client <A> & Team' : 'Client B', clientSecret: `synthetic-confidential-client-secret-${label}`, redirectUris: [`${origin}/callback/${label}`] }));
     clients.push({ clientId: 'client-form-post', clientSecret: 'synthetic-confidential-form-post-secret', redirectUris: ['https://configured-callback.invalid/oauth/callback'] });
     const authorizations = [], grantWrites = new Set(), mcpClients = [];
+    let storeUnavailable = false;
     t.after(async () => {
         for (const client of mcpClients) await client.close().catch(() => {});
         for (const host of extraHosts) { await host.application?.close(); host.server.closeAllConnections(); await new Promise(resolve => host.server.close(resolve)); }
@@ -57,6 +58,7 @@ for (const mcpPath of ['/mcp', '/crawl']) test(`actual Remote consent, OAuth and
     });
     let verifies = 0, round = 0;
     const store = { namespace: `remote_${randomBytes(8).toString('hex')}`, maxTtlSeconds: 300, command: async args => {
+        if (storeUnavailable) throw new Error('synthetic storage outage');
         // Observe real Grant creation without substituting provider or storage behavior.
         if (args[0] === 'EVAL' && args[1].includes("redis.call('HSET', key, 'payload'") && args[3].includes(':record:R3JhbnQ:')) grantWrites.add(args[3]);
         return (round++ % 2 ? redis.command2 : redis.command)(args);
@@ -97,6 +99,7 @@ for (const mcpPath of ['/mcp', '/crawl']) test(`actual Remote consent, OAuth and
         const form = await page.fetch(url), html = await form.text(); noKey(html);
         if (client.name === 'Client <A> & Team') assert(html.includes('Client &lt;A&gt; &amp; Team') && !html.includes(client.name), 'configured client display name is escaped');
         assert(form.status === 200 && /name="apiToken" type="password"/.test(html) && !/name="apiToken"[^>]*value=/.test(html));
+        assert.equal(form.headers.get('referrer-policy'), 'same-origin', 'native form POSTs must retain a same-origin Origin');
         assert(form.headers.getSetCookie().some(cookie => cookie.startsWith('nstdata_oauth_csrf=') && cookie.includes('HttpOnly') && cookie.includes('SameSite=Strict') && cookie.includes(`Path=${url.pathname};`)));
         const csrf = /name="csrf" value="([^"]+)"/.exec(html)?.[1]; assert(csrf);
         return { ...target, page, client, verifier, state, url, csrf };
@@ -120,6 +123,7 @@ for (const mcpPath of ['/mcp', '/crawl']) test(`actual Remote consent, OAuth and
             if (response.status === 200) {
                 const html = await response.text(), action = /<form[^>]+action="([^"]+)"/.exec(html)?.[1], script = /<script>([\s\S]*?)<\/script>/.exec(html)?.[1]; noKey(html);
                 const next = new URL(action, flow.origin), policy = response.headers.get('content-security-policy') ?? '';
+                assert.equal(response.headers.get('referrer-policy'), 'same-origin', 'provider account-switch form POSTs need the same policy');
                 assert(next.origin === flow.origin && next.pathname === '/session/end/confirm' && script);
                 assert((policy.split(';').find(value => value.trim().startsWith('script-src ')) ?? '').includes(`'sha256-${createHash('sha256').update(script).digest('base64')}'`));
                 const fields = new URLSearchParams([...html.matchAll(/<input[^>]*name="([^"]+)"[^>]*value="([^"]*)"/g)].map(match => [match[1], match[2]]));
@@ -208,8 +212,11 @@ for (const mcpPath of ['/mcp', '/crawl']) test(`actual Remote consent, OAuth and
         const next = location ? new URL(location, origin) : undefined;
         if (next?.pathname.startsWith('/oauth/interaction/')) {
             assert.equal(next.origin, origin);
-            const denied = await page.fetch(next), error = await denied.json();
-            assert.equal(denied.status, 400); assert.equal(error.error, 'Invalid authorization request');
+            const denied = await page.fetch(next), html = await denied.text();
+            assert.equal(denied.status, 400);
+            assert.match(denied.headers.get('content-type'), /^text\/html/);
+            assert.match(html, /Invalid authorization request/);
+            assert.doesNotMatch(html, /<form\b|name="apiToken"/); noKey(html);
         } else assert.equal(next ? next.searchParams.get('error') : JSON.parse(body).error, 'invalid_scope');
         assert.deepEqual(snapshot(), before);
     });
@@ -252,6 +259,60 @@ for (const mcpPath of ['/mcp', '/crawl']) test(`actual Remote consent, OAuth and
         assert.deepEqual(responses.map(response => response.status).sort(), [303, 403]);
         assert.deepEqual(snapshot(), before.map(value => value + 1));
     });
+    await t.test('interaction storage failure is unavailable rather than expired, with no key verification', async () => {
+        const flow = await begin(), before = snapshot();
+        storeUnavailable = true;
+        try {
+            const response = await submit(flow), html = await response.text();
+            assert.equal(response.status, 503);
+            assert.match(response.headers.get('content-type'), /^text\/html/);
+            assert.match(html, /Authorization unavailable/);
+            assert.doesNotMatch(html, /Authorization expired|No access has been confirmed|<form\b/);
+            noKey(html); assert.deepEqual(snapshot(), before);
+        } finally { storeUnavailable = false; }
+    });
+    await t.test('invalid interaction URLs and malformed form bodies return safe browser error pages', async () => {
+        const flow = await begin(), before = snapshot();
+        const invalidUrl = new URL(flow.url); invalidUrl.search = '?unexpected=1';
+        const responses = [
+            await flow.page.fetch(invalidUrl),
+            await flow.page.fetch(flow.url, { method: 'POST', headers: { origin, 'content-type': 'application/x-www-form-urlencoded' }, body: new Uint8Array([0xff]) }),
+        ];
+        for (const response of responses) {
+            const html = await response.text();
+            assert.equal(response.status, 400);
+            assert.match(response.headers.get('content-type'), /^text\/html/);
+            assert.match(html, /Return to your application and connect again/);
+            assert.doesNotMatch(html, /<form\b|name="apiToken"/); noKey(html);
+        }
+        assert.deepEqual(snapshot(), before);
+    });
+    await t.test('null and missing origins are rejected before verification, with no key in the error page', async () => {
+        for (const headers of [{ origin: 'null' }, {}]) {
+            const flow = await begin(), before = snapshot();
+            const response = await flow.page.fetch(flow.url, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', ...headers },
+                body: new URLSearchParams({ csrf: flow.csrf, apiToken: keys.A, decision: 'allow' }) });
+            const html = await response.text();
+            assert.equal(response.status, 403);
+            assert.match(response.headers.get('content-type'), /^text\/html/);
+            assert.match(html, /Authorization blocked/); noKey(html);
+            assert.doesNotMatch(html, /<form\b|name="apiToken"/);
+            assert.deepEqual(snapshot(), before);
+        }
+    });
+    await t.test('a stale form can be recovered explicitly without reusing the key or granting access', async () => {
+        const flow = await begin(), before = snapshot();
+        const response = await submit(flow, { csrf: 'stale-form' }), html = await response.text();
+        assert.equal(response.status, 403);
+        assert.match(html, /This form is no longer valid/); noKey(html);
+        assert.doesNotMatch(html, /name="apiToken"[^>]*value=/);
+        assert.deepEqual(snapshot(), before);
+        const csrf = /name="csrf" value="([^"]+)"/.exec(html)?.[1]; assert(csrf && csrf !== flow.csrf);
+        // A user may cancel the new form without submitting or validating a key.
+        const cancelled = await submit({ ...flow, csrf }, { decision: 'deny', apiToken: '' });
+        assert.equal(cancelled.status, 303);
+        await cancelled.arrayBuffer(); assert.deepEqual(snapshot(), before);
+    });
     await t.test('preflight, bad credentials, malformed response and timeout fail before credential/Grant writes', async () => {
         const hostFlow = await begin(), beforeHost = snapshot(), wrongHost = await nativePost(hostFlow, { host: 'attacker.invalid' });
         assert.equal(wrongHost.status, 400); assert.deepEqual(snapshot(), beforeHost);
@@ -264,6 +325,9 @@ for (const mcpPath of ['/mcp', '/crawl']) test(`actual Remote consent, OAuth and
         for (const [label, status] of [['bad', 401], ['invalid', 503], ['timeout', 503]]) {
             const flow = await begin(), before = snapshot(), response = await submit(flow, { apiToken: keys[label] }), html = await response.text(); noKey(html);
             assert.equal(response.status, status); assert.equal(authorizations.length, before[1]); assert.equal(grantWrites.size, before[2]);
+            assert.match(response.headers.get('content-type'), /^text\/html/);
+            assert.match(html, /role="alert"/);
+            assert.doesNotMatch(html, /name="apiToken"[^>]*value=/);
         }
     });
     await t.test('actual HTTP disconnect aborts live verification before any binding or Grant', async () => {
