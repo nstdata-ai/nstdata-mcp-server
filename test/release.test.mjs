@@ -18,6 +18,18 @@ const environment = { can_admins_bypass: false,
     deployment_branch_policy: { custom_branch_policies: true, protected_branches: false } };
 const policies = { total_count: 1, branch_policies: [{ name: 'main', type: 'branch' }] };
 
+test('publish-only reruns download the artifact from the successful package job', () => {
+    const workflow = fs.readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
+    const [packageJobs, publishJob] = workflow.split('\n  publish:\n');
+    assert.match(packageJobs, /artifact-id: \$\{\{ steps\.upload\.outputs\.artifact-id \}\}/);
+    assert.match(packageJobs, /- id: upload\n\s+uses: actions\/upload-artifact@/);
+    const download = publishJob.match(/uses: actions\/download-artifact@[^\n]+\n\s+with:\n([\s\S]*?)(?=\n      -|$)/)?.[1];
+    assert.ok(download, 'Download step required');
+    assert.match(download, /artifact-ids: \$\{\{ needs\.package\.outputs\.artifact-id \}\}/);
+    assert.doesNotMatch(download, /\bname:|github\.run_attempt/);
+    assert.match(publishJob, /RELEASE_MANIFEST_SHA256: \$\{\{ needs\.package\.outputs\.manifest-sha256 \}\}/);
+});
+
 test('release identity requires a manually dispatched reviewed main commit and stable matching version', () => {
     validateSource(env, pkg);
     for (const [key, value] of Object.entries({ GITHUB_EVENT_NAME: 'push', GITHUB_REPOSITORY: 'other/nstdata-mcp-server', GITHUB_REF: 'refs/heads/feature',
