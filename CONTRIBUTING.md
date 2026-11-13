@@ -66,6 +66,8 @@ Cursor uses `.cursor-plugin/marketplace.json`, `plugins/nstdata/.cursor-plugin/p
 
 Claude Code uses `.claude-plugin/marketplace.json`, `plugins/nstdata/.claude-plugin/plugin.json` and `plugins/nstdata/claude.mcp.json`. Keep credentials in client-managed sensitive configuration. An explicit MCP file must override the same-named entry in the default `.mcp.json`. Adding a host-specific manifest requires checking that the other hosts still select their own manifests and configuration files.
 
+Gemini CLI uses the root `gemini-extension.json` for Git-based installation, separately from the npm package. Keep its npm pin and extension version aligned; its sensitive setting belongs to Gemini CLI. This extension exposes Crawl only; keep Proxy available through manual MCP configuration. Check native installation, sensitive-setting resolution and connection separately from manifest validation, and preserve the other hosts' manifest selection.
+
 ## Releases
 
 The `Publish npm` workflow runs only when manually dispatched from `main`, with the stable version in `package.json` and a full reviewed commit SHA. Checks produce one archive and its integrity manifest. The `npm-production` reviewer approves publication of those exact bytes. The workflow finishes when `npm publish` succeeds. Public availability may be delayed; registry integrity, installation and tool discovery are checked separately.

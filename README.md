@@ -2,20 +2,21 @@
 
 [中文](README_zh.md)
 
-Use Nstdata Crawl and HTTP/HTTPS proxies from an MCP client. The client starts a local stdio process; no additional hosted MCP service is required.
+Use Nstdata Crawl and HTTP/HTTPS proxies from an MCP client.
 
-To connect to or host an HTTPS endpoint, see [Remote MCP](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/docs/remote.md). The npm package provides the local stdio server.
+Use [Remote MCP](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/docs/remote.md) at `https://mcp.nstdata.io/crawl` for hosted Crawl with OAuth; no local Node.js or `npx` is required. The local stdio setup below provides Crawl and HTTP/HTTPS Proxy tools.
 
 ## Connect
 
-Requires Node.js 22 (22.18 or later) or 24, with `npx` on PATH. Get a Crawl API key from the [Nstdata dashboard](https://app.nstdata.io/). Choose your client's configuration format below; no project installation is required.
+Local stdio requires Node.js 22 (22.18 or later) or 24, with `npx` on PATH. Get a Crawl API key from the [Nstdata dashboard](https://app.nstdata.io/). Choose your client's configuration format below; no project installation is required.
 
 | Client | Setup |
 |---|---|
 | Cursor | JSON below or the [marketplace plugin](docs/mcp.md#optional-cursor-plugin) |
 | Codex | TOML below or the [marketplace plugin](docs/mcp.md#optional-codex-plugin) |
 | Claude Code | [CLI setup](docs/mcp.md#claude-code-cli) or the [marketplace plugin](docs/mcp.md#optional-claude-code-plugin) |
-| Claude Desktop, Cline, Roo Code, Gemini CLI, Windsurf | [Client configuration](docs/mcp.md#client-setup) |
+| Gemini CLI | [Crawl extension](docs/mcp.md#gemini-cli-extension) or [manual MCP configuration](docs/mcp.md#json-stdio-configuration) |
+| Claude Desktop, Cline, Windsurf | [Client configuration](docs/mcp.md#client-setup) |
 | VS Code / GitHub Copilot | [IDE and CLI configuration](docs/mcp.md#vs-code-and-github-copilot) |
 | OpenCode | [OpenCode configuration](docs/mcp.md#opencode) |
 

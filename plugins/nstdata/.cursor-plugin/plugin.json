@@ -1,6 +1,6 @@
 {
   "name": "nstdata",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Retrieve web content and use HTTP/HTTPS proxies through Nstdata.",
   "mcpServers": "./mcp.json",
   "variables": {

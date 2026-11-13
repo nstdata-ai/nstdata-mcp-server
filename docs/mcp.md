@@ -2,6 +2,8 @@
 
 [中文](mcp_zh.md) · [Quick start](../README.md)
 
+For hosted Crawl over Streamable HTTP without local Node.js or `npx`, see [Remote MCP](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/docs/remote.md). Proxy tools use the local stdio setup below.
+
 ## Client setup
 
 Requires Node.js 22 (22.18 or later) or 24, with `npx` on PATH. Get a Crawl API key from the [Nstdata dashboard](https://app.nstdata.io/). The direct configurations below pin the local stdio package; optional marketplace plugins use the release pinned in their manifests. No project installation is required.
@@ -15,8 +17,7 @@ Choose one connection per client and preserve other server entries. Keep populat
 | Claude Code | The [Claude Code CLI](#claude-code-cli) command below |
 | VS Code / GitHub Copilot | Choose the [IDE or Copilot CLI configuration](#vs-code-and-github-copilot) below |
 | Cline | MCP Servers → Configure → Configure MCP Servers; merge the [JSON template](#json-stdio-configuration). The CLI uses `~/.cline/data/settings/cline_mcp_settings.json`; [official guide](https://docs.cline.bot/mcp/mcp-overview) |
-| Roo Code | Edit Global MCP (`mcp_settings.json`) or Edit Project MCP (`.roo/mcp.json`); use the [JSON template](#json-stdio-configuration); [official guide](https://roocodeinc.github.io/Roo-Code/features/mcp/using-mcp-in-roo/) |
-| Gemini CLI | Merge the [JSON template](#json-stdio-configuration) into user `~/.gemini/settings.json` or project `.gemini/settings.json`; [official guide](https://geminicli.com/docs/tools/mcp-server/) |
+| Gemini CLI | [Crawl extension](#gemini-cli-extension), or merge the [JSON template](#json-stdio-configuration) into user `~/.gemini/settings.json` or project `.gemini/settings.json`; [official MCP guide](https://geminicli.com/docs/tools/mcp-server/) |
 | OpenCode | Use the [OpenCode configuration](#opencode) below |
 | Windsurf | Merge the [JSON template](#json-stdio-configuration) into user `~/.codeium/windsurf/mcp_config.json`, then refresh the MCP connection or restart Windsurf; [manual configuration reference](https://github.com/github/github-mcp-server/blob/main/docs/installation-guides/install-windsurf.md#manual-configuration) |
 | Claude Desktop | Merge the JSON entry following the [local MCP setup guide](https://modelcontextprotocol.io/docs/develop/connect-local-servers) |
@@ -156,6 +157,40 @@ claude plugin update nstdata@nstdata
 ```
 
 Use `/plugin` to disable or uninstall the plugin when no longer needed. The plugin pins the MCP version; changing npm `latest` alone does not update it. See the [Claude Code plugin commands](https://code.claude.com/docs/en/plugins/cli-reference#plugin-commands-in-a-session).
+
+### Gemini CLI extension
+
+Use Gemini CLI 0.67.0 or later and install with the [extension commands](https://geminicli.com/docs/extensions/reference/); for older versions, use [manual MCP configuration](#json-stdio-configuration):
+
+```sh
+gemini extensions install https://github.com/nstdata-ai/nstdata-mcp-server
+```
+
+Review the installation approval and enter **Nstdata Crawl API key** when prompted. Gemini CLI manages this sensitive setting; keep the real Key out of command arguments. To set or replace it later:
+
+```sh
+gemini extensions config nstdata NSTDATA_API_TOKEN --scope user
+```
+
+Start a new Gemini session after installing or changing settings. From the terminal, check installation and connection:
+
+```sh
+gemini extensions list
+gemini mcp list
+```
+
+The extension list should include `nstdata`; the MCP list should show it as **Connected**. In Gemini, use `/mcp` to confirm the six Crawl tools before submitting a task. This extension fixes the module to `crawl`. For Proxy or additional environment settings, use [manual MCP configuration](#json-stdio-configuration) and the [Proxy guide](proxy.md) instead.
+
+Keep one Nstdata configuration: an existing `mcpServers.nstdata` in Gemini's `settings.json` overrides the extension. For a missing Key, run the configuration command above. If disconnected, inspect Gemini's diagnostics for Node/`npx` availability and npm download access; the first launch may need to install the pinned package.
+
+Update or uninstall from the terminal, then restart the Gemini session:
+
+```sh
+gemini extensions update nstdata
+gemini extensions uninstall nstdata
+```
+
+The extension pins MCP `1.0.3`; changing npm `latest` alone does not update it. Uninstalling may retain credentials managed by Gemini CLI. Revoking the Key in the [Nstdata dashboard](https://app.nstdata.io/) also blocks other apps sharing that Key.
 
 ## Configuration
 

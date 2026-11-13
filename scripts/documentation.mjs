@@ -29,7 +29,7 @@ export function shellCommands(text) {
             if (continued) assert.match(line, /\s\\$/, 'Line continuation must follow a complete argument');
             words.push(...literalWords(continued ? line.trimEnd().slice(0, -1) : line));
             if (continued) continue;
-            assert.ok(['npm', 'npx', 'node', 'codex', 'claude'].includes(words[0]), 'Unsupported documentation executable');
+            assert.ok(['npm', 'npx', 'node', 'codex', 'claude', 'gemini'].includes(words[0]), 'Unsupported documentation executable');
             commands.push(words);
             words = [];
         }

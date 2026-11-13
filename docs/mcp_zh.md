@@ -2,6 +2,8 @@
 
 [English](mcp.md) · [快速开始](../README_zh.md)
 
+通过 Streamable HTTP 接入托管 Crawl 无需本机 Node.js 或 `npx`，详见 [Remote MCP](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/docs/remote_zh.md)。Proxy 工具使用下方本地 stdio 配置。
+
 ## 客户端接入
 
 需要 Node.js 22（22.18及以上）或24，且 `npx` 位于 PATH。先从 [Nstdata 控制台](https://app.nstdata.io/)取得 Crawl API Key。以下直接配置固定本地 stdio 包版本；可选市场插件使用各自清单中固定的版本。无需先安装项目依赖。
@@ -15,8 +17,7 @@
 | Claude Code | 使用下方 [Claude Code CLI](#claude-code-cli) 命令 |
 | VS Code／GitHub Copilot | 选择下方 [IDE 或 Copilot CLI 配置](#vs-code-与-github-copilot) |
 | Cline | MCP Servers → Configure → Configure MCP Servers，合入[JSON 模板](#json-stdio-配置)；CLI 使用 `~/.cline/data/settings/cline_mcp_settings.json`；[官方文档](https://docs.cline.bot/mcp/mcp-overview) |
-| Roo Code | Edit Global MCP（`mcp_settings.json`）或 Edit Project MCP（`.roo/mcp.json`），合入[JSON 模板](#json-stdio-配置)；[官方文档](https://roocodeinc.github.io/Roo-Code/features/mcp/using-mcp-in-roo/) |
-| Gemini CLI | 在用户 `~/.gemini/settings.json` 或项目 `.gemini/settings.json` 合入[JSON 模板](#json-stdio-配置)；[官方文档](https://geminicli.com/docs/tools/mcp-server/) |
+| Gemini CLI | [Crawl 扩展](#gemini-cli-扩展)，或在用户 `~/.gemini/settings.json`／项目 `.gemini/settings.json` 合入[JSON 模板](#json-stdio-配置)；[官方 MCP 文档](https://geminicli.com/docs/tools/mcp-server/) |
 | OpenCode | 使用下方 [OpenCode 配置](#opencode) |
 | Windsurf | 在用户 `~/.codeium/windsurf/mcp_config.json` 合入[JSON 模板](#json-stdio-配置)，保存后刷新 MCP 连接或重启 Windsurf；[手动配置依据](https://github.com/github/github-mcp-server/blob/main/docs/installation-guides/install-windsurf.md#manual-configuration) |
 | Claude Desktop | 按[本地 MCP 接入文档](https://modelcontextprotocol.io/docs/develop/connect-local-servers)合入 JSON 条目 |
@@ -156,6 +157,40 @@ claude plugin update nstdata@nstdata
 ```
 
 无需使用时，通过 `/plugin` 禁用或卸载。插件固定 MCP 版本，仅更新 npm `latest` 不会更新插件。详见 [Claude Code 插件命令](https://code.claude.com/docs/en/plugins/cli-reference#plugin-commands-in-a-session)。
+
+### Gemini CLI 扩展
+
+使用 Gemini CLI 0.67.0 或更新版本，通过[扩展命令](https://geminicli.com/docs/extensions/reference/)安装；旧版本使用[手动 MCP 配置](#json-stdio-配置)：
+
+```sh
+gemini extensions install https://github.com/nstdata-ai/nstdata-mcp-server
+```
+
+审核安装授权提示，并按提示填写 **Nstdata Crawl API key**。此敏感配置由 Gemini CLI 管理，不要把真实 Key 写入命令参数。之后设置或更换 Key 时运行：
+
+```sh
+gemini extensions config nstdata NSTDATA_API_TOKEN --scope user
+```
+
+安装或修改配置后新开 Gemini 会话。在终端检查安装记录和连接：
+
+```sh
+gemini extensions list
+gemini mcp list
+```
+
+扩展列表应包含 `nstdata`，MCP 列表应显示 **Connected**。在 Gemini 中使用 `/mcp` 确认6个 Crawl 工具后再提交任务。此扩展固定启用 `crawl`；需要 Proxy 或其他环境设置时，改用[手动 MCP 配置](#json-stdio-配置)和 [Proxy 指南](proxy_zh.md)。
+
+只保留一份 Nstdata 配置：Gemini `settings.json` 中已有的 `mcpServers.nstdata` 会覆盖扩展。缺少 Key 时运行上方配置命令；连接失败时，查看 Gemini 诊断中的 Node／`npx` 可用性和 npm 下载访问情况，首次启动可能需要安装固定版本的包。
+
+在终端更新或卸载后重启 Gemini 会话：
+
+```sh
+gemini extensions update nstdata
+gemini extensions uninstall nstdata
+```
+
+扩展固定 MCP `1.0.3`，仅更新 npm `latest` 不会更新它。卸载可能保留 Gemini CLI 管理的凭据。在 [Nstdata 控制台](https://app.nstdata.io/)作废 Key 也会阻止其他共用此 Key 的应用访问。
 
 ## 配置
 

@@ -6,29 +6,31 @@
 
 ## 客户端接入
 
-使用服务维护者提供的 HTTPS MCP 地址，例如 `https://mcp.example.com/crawl`。
+使用支持 Streamable HTTP 的 MCP 客户端连接 `https://mcp.nstdata.io/crawl`，无需在本机安装 Node.js、`npx` 或 npm 包。客户端支持浏览器授权时优先使用 OAuth；高级客户端或程序也可使用 API Key。自托管服务请改用其维护者提供的地址。
 
 | 认证方式 | 适用场景 | 配置 |
 |---|---|---|
 | OAuth | 支持浏览器授权的客户端 | 填写 MCP 地址，客户端自动发现并完成客户端注册 |
-| API Key | 支持设置请求头的客户端或程序 | 填写同一 MCP 地址，并将自己的 Nstdata API Key 配置为 `X-API-Key` 请求头 |
+| API Key（高级） | 支持设置请求头的客户端或程序 | 填写同一 MCP 地址，并将自己的 Nstdata API Key 配置为 `X-API-Key` 请求头 |
 
 使用 OAuth：
 
-1. 将地址添加为 Streamable HTTP MCP 服务；若客户端询问认证方式，选择 OAuth。
+1. 将地址添加为 Streamable HTTP MCP 服务；若客户端询问认证方式，选择 OAuth。若有手动 Bearer token、其环境变量或认证请求头字段，将其留空。
 2. 打开授权链接，核对请求授权的应用，输入从 [Nstdata 控制台](https://app.nstdata.io/)获取的 API Key。
-3. 点击 **Authorize Crawl**，返回客户端，确认可以发现六个 `nstdata_crawl_*` 工具。
+3. 点击 **Authorize**，返回客户端，确认可以发现六个 `nstdata_crawl_*` 工具。
 
 授权页校验 API Key 并征求同意，不执行 Nstdata 账户登录。应用可在授权到期或被撤销前续期访问。新增设备不需要修改服务器配置或重启服务。各客户端的界面和组织策略可能不同，需支持所选认证方式。
+
+抓取、任务接续和引用读取方法见[工具参考](mcp_zh.md#工具参考)与[使用流程](mcp_zh.md#使用流程)。
 
 ### API Key 接入
 
 在客户端受保护的配置中设置一个 `X-API-Key` 请求头。`Authorization: Bearer` 仅用于 OAuth access token，不要在其中填写业务 API Key，也不要同时发送两种凭据。不要把凭据放在 URL 或日志中。
 
-需要在 Linux／macOS 终端检查工具发现时，在本地环境中设置 `NSTDATA_API_TOKEN`，替换示例地址后执行：
+需要在 Linux／macOS 终端检查工具发现时，在本地环境中设置 `NSTDATA_API_TOKEN` 后执行：
 
 ```sh
-NSTDATA_MCP_URL='https://mcp.example.com/crawl'
+NSTDATA_MCP_URL='https://mcp.nstdata.io/crawl'
 curl --fail-with-body --silent --show-error --max-time 15 \
   --request POST "$NSTDATA_MCP_URL" \
   --header "X-API-Key: ${NSTDATA_API_TOKEN:?Set NSTDATA_API_TOKEN}" \

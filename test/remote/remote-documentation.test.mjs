@@ -90,7 +90,7 @@ test('documented API-key discovery command runs unchanged apart from its loopbac
         return commands[0];
     });
     assert.equal(examples[0], examples[1]);
-    assert.equal(examples[0].split('https://mcp.example.com/crawl').length, 2, 'replace the only network destination before executing');
+    assert.equal(examples[0].split('https://mcp.nstdata.io/crawl').length, 2, 'replace the only network destination before executing');
     const directory = fs.mkdtempSync(path.join(tmpdir(), 'mcp-docs-curl-'));
     t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
     t.mock.method(globalThis, 'fetch', () => { throw new Error('Documented discovery must not access upstream services'); });
@@ -142,7 +142,7 @@ test('documented API-key discovery command runs unchanged apart from its loopbac
         child.stderr.on('data', data => { stderr += data; });
         child.once('error', reject);
         child.once('close', status => resolve({ status, stdout, stderr }));
-        child.stdin.end(examples[0].replace('https://mcp.example.com/crawl', resourceUrl));
+        child.stdin.end(examples[0].replace('https://mcp.nstdata.io/crawl', resourceUrl));
     });
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stderr, '');
