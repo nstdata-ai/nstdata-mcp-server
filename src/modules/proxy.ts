@@ -23,6 +23,7 @@ export function registerProxyTools(server: McpServer, config: Config): void {
     const transport = createProxyTransport({ proxyURL: config.proxyURL!, timeoutMs: config.httpTimeoutMs,
         maxResponseBytes: config.maxResponseBytes, caFile: config.proxyCAFile });
     server.registerTool('nstdata_proxy_fetch', {
+        title: 'Fetch through a proxy',
         description: 'Read an HTTP(S) page through the configured proxy. Does not follow redirects or retry; may consume billable traffic.',
         inputSchema: z.strictObject({
             url: z.url().max(8192).refine(value => { const url = new URL(value); return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password; }).describe('HTTP(S) target accessed through the configured proxy; no embedded credentials.'),
@@ -30,7 +31,7 @@ export function registerProxyTools(server: McpServer, config: Config): void {
             format: z.enum(['text', 'base64']).default('text').describe('text requires UTF-8; base64 preserves binary bytes.'),
             headers: targetHeaders.optional().describe('Optional target request headers. Send Authorization or Cookie only to trusted targets; proxy and connection headers are reserved.'),
         }),
-        annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     }, async (args, ctx) => guard(ctx, config, async options => {
         const response = await transport.request(args, { signal: options.signal });
         if (args.format === 'text' && !isUtf8(response.body)) throw new ToolFailure('INVALID_RESPONSE', 'The response is not valid UTF-8. Use base64 to read binary content.');
@@ -41,9 +42,10 @@ export function registerProxyTools(server: McpServer, config: Config): void {
             isError: response.statusCode < 200 || response.statusCode >= 300 };
     }));
     server.registerTool('nstdata_proxy_check', {
+        title: 'Check a proxy connection',
         description: 'Check the proxy once against NSTDATA_PROXY_CHECK_URL, or https://example.com/ by default. Returns observedIp only when the target echoes a valid IP. Startup does not run this check.',
         inputSchema: z.strictObject({}),
-        annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     }, async (_args, ctx) => guard(ctx, config, async options => {
         const started = performance.now();
         const response = await transport.request({ url: config.proxyCheckURL!, method: 'GET' }, { signal: options.signal });

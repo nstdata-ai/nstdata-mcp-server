@@ -9,6 +9,7 @@ import { serializeData, taskFailed, requireSubmissionId } from './crawl-result.j
 
 export function registerCrawlTools(server: McpServer, client: NstDataClient, config: Config): void {
     server.registerTool('nstdata_crawl_read_result', {
+        title: 'Read stored content',
         description: 'Read a bounded chunk of a Crawl storage reference. Text offsets count Unicode code points; binary offsets count bytes. Each call downloads the reference again, within the response byte limit.',
         inputSchema: z.strictObject({
             ref: z.string().min(1).max(4096).describe('Copy the actual value of markdownRef, htmlRef, pdfRef, screenshotRef or rawDataRef into ref; do not use the output field name as an input key.'),
@@ -16,7 +17,7 @@ export function registerCrawlTools(server: McpServer, client: NstDataClient, con
             offset: z.number().int().min(0).default(0).describe('Start position: Unicode code points for markdown/html, bytes for binary formats. Use the preceding read result\'s nextOffset to continue.'),
             length: z.number().int().min(1).max(4000).default(2000).describe('Maximum Unicode code points for markdown/html, or bytes for binary formats, in this chunk. Reduce it if the chunk exceeds the output limit.'),
         }),
-        annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     }, async (args, ctx) => guard(ctx, config, async options => {
         const bytes = Buffer.from(await client.readStorage(args.ref, options));
         const isText = args.format === 'markdown' || args.format === 'html';
@@ -36,6 +37,7 @@ export function registerCrawlTools(server: McpServer, client: NstDataClient, con
         return { content: [{ type: 'text', text: JSON.stringify(output) }], structuredContent: output };
     }));
     server.registerTool('nstdata_crawl_start', {
+        title: 'Start a website crawl',
         description: 'Start a bounded site crawl and return its task ID immediately.',
         inputSchema: z.strictObject({
             url: httpURL, formats, options: scrapeOptions,
@@ -53,14 +55,16 @@ export function registerCrawlTools(server: McpServer, client: NstDataClient, con
         return { content: [{ type: 'text', text: JSON.stringify(output) }], structuredContent: { ...output }, isError: taskFailed(output) };
     }, 'task'));
     server.registerTool('nstdata_crawl_status', {
+        title: 'Check crawl progress',
         description: 'Read aggregate crawl progress without polling.',
         inputSchema: z.strictObject({ crawlId: identifier.describe('Actual id returned by nstdata_crawl_start; reuse the existing task instead of submitting another crawl.') }),
-        annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     }, async (args, ctx) => guard(ctx, config, async options => {
         const output = { ...await client.getCrawlStatus(args.crawlId, options), crawlId: args.crawlId };
         return { content: [{ type: 'text', text: JSON.stringify(output) }], structuredContent: { ...output }, isError: taskFailed(output) };
     }));
     server.registerTool('nstdata_crawl_pages', {
+        title: 'List crawl pages',
         description: 'Read one page of crawl results without downloading referenced files. On OUTPUT_LIMIT, retry the same input cursor with a smaller limit. A single-row error may retain recovery.page references; handle that page before using recovery.continuation.',
         inputSchema: z.strictObject({
             crawlId: identifier.describe('Actual id of the existing site crawl.'),
@@ -68,7 +72,7 @@ export function registerCrawlTools(server: McpServer, client: NstDataClient, con
             beforeCursor: z.string().min(1).max(8192).optional().describe('Copy prevCursor from a successful read, or recovery.continuation.prevCursor after handling recovery.page. On OUTPUT_LIMIT keep the original input cursor; do not combine with afterCursor.'),
             limit: z.number().int().min(1).max(100).default(10).describe('Maximum rows in this response. Reduce down to 1 on OUTPUT_LIMIT; a single row may still exceed the output cap.'),
         }).refine(args => !(args.afterCursor && args.beforeCursor)),
-        annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     }, async ({ crawlId, ...pageOptions }, ctx) => guard(ctx, config, async options => {
         const result = await client.listCrawlPages(crawlId, pageOptions, options);
         const output = { ...result, crawlId, data: result.data && await Promise.all(result.data.map(async page => ({
@@ -77,6 +81,7 @@ export function registerCrawlTools(server: McpServer, client: NstDataClient, con
         return { content: [{ type: 'text', text: JSON.stringify(output) }], structuredContent: output };
     }));
     server.registerTool('nstdata_crawl_scrape', {
+        title: 'Scrape a webpage',
         description: 'Retrieve a webpage through Nstdata Crawl. Creates a potentially billable scrape task.',
         inputSchema: z.strictObject({
             url: httpURL, formats, options: scrapeOptions,
@@ -96,9 +101,10 @@ export function registerCrawlTools(server: McpServer, client: NstDataClient, con
         return { content: [{ type: 'text', text: JSON.stringify(output) }], structuredContent: output, isError: taskFailed(result) };
     }, 'task'));
     server.registerTool('nstdata_crawl_scrape_result', {
+        title: 'Read a scrape result',
         description: 'Resume a submitted single-page task. Processing is not completion; a failed or expired task is reported explicitly.',
         inputSchema: z.strictObject({ taskId: identifier.describe('Actual id returned by an existing single-page submission; not a site crawl id or a storage reference.') }),
-        annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     }, async (args, ctx) => guard(ctx, config, async options => {
         const result = await client.getScrapeTaskResult(args.taskId, options);
         const output = { id: result.id, taskId: args.taskId, status: result.status, success: result.success,
