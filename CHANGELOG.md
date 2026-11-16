@@ -4,7 +4,7 @@
 
 ### Tool metadata
 
-- Add readable titles and explicit safety hints to tool discovery for local and Remote clients.
+- Add readable titles and explicit safety hints to tool discovery for Remote clients.
 - Describe the Crawl extension in Gemini CLI gallery metadata.
 
 ### Client distribution
@@ -22,6 +22,12 @@
 - Allow consent and account-switch forms to return to the registered client callback origin without broadening other browser permissions.
 - Return to IPv6 callbacks through a browser navigation page; reject IPv6 `form_post` before consent instead of consuming an authorization that cannot return.
 - Keep idle Redis connections active with bounded heartbeats and identify service failures without exposing connection details.
+
+## 1.0.4
+
+### Stdio tool metadata
+
+- Add readable titles to all eight Crawl and Proxy tools and explicit non-destructive hints to the six read-only tools.
 
 ## 1.0.3
 

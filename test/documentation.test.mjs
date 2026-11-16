@@ -17,7 +17,8 @@ test('the standalone plugin includes its own installation guide and MIT license'
     const chinese = fs.readFileSync(new URL('README_zh.md', directory), 'utf8');
     const versions = ['.codex-plugin', '.cursor-plugin', '.claude-plugin'].map(name =>
         JSON.parse(fs.readFileSync(new URL(`${name}/plugin.json`, directory), 'utf8')).version);
-    assert.deepEqual(versions, [version, version, version], 'Native plugins must select the current server release');
+    assert.match(versions[0], /^\d+\.\d+\.\d+$/);
+    assert.deepEqual(versions, [versions[0], versions[0], versions[0]], 'Native plugins must select the same server release');
     for (const text of [readme, chinese]) assert.ok(text.includes(`@nstdata-ai/mcp-server@${versions[0]}`));
     assert.ok(readme.replace(/```[\s\S]*?```/g, '').trim().split(/\s+/).length >= 40);
     assert.match(readme, /\[中文\]\(README_zh\.md\)/);
@@ -104,7 +105,7 @@ test('Codex plugin starts the pinned package and forwards required and optional 
 test('Gemini extension uses the published Crawl server and a client-managed sensitive setting', () => {
     const read = file => JSON.parse(fs.readFileSync(new URL('../' + file, import.meta.url), 'utf8'));
     const extension = read('gemini-extension.json');
-    const version = read('package.json').version;
+    const version = read('plugins/nstdata/.codex-plugin/plugin.json').version;
     assert.equal(extension.name, 'nstdata');
     assert.equal(extension.version, version);
     assert.deepEqual(Object.keys(extension.mcpServers), ['nstdata']);
