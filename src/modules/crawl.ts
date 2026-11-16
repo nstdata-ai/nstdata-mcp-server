@@ -1,4 +1,4 @@
-import { McpServer } from '@modelcontextprotocol/server';
+import { McpServer, type CallToolResult } from '@modelcontextprotocol/server';
 import { NstDataClient } from '@nstdata-ai/crawl';
 import { z } from 'zod';
 import { isUtf8 } from 'node:buffer';
@@ -6,35 +6,93 @@ import { guard, ToolFailure } from '../shared/errors.js';
 import { type Config } from '../config.js';
 import { httpURL, identifier, formats, scrapeOptions } from './crawl-schema.js';
 import { serializeData, taskFailed, requireSubmissionId } from './crawl-result.js';
+import { boundResult, configuredSecrets } from '../shared/output.js';
 
 export function registerCrawlTools(server: McpServer, client: NstDataClient, config: Config): void {
     server.registerTool('nstdata_crawl_read_result', {
         title: 'Read stored content',
-        description: 'Read a bounded chunk of a Crawl storage reference. Text offsets count Unicode code points; binary offsets count bytes. Each call downloads the reference again, within the response byte limit.',
+        description: 'Read a Crawl storage reference. Returns a chunk that fits the output budget, at most 16000 units. Continue with the actual nextOffset until absent or the authorized budget is reached. Text offsets count Unicode code points; binary offsets count bytes. Each call downloads the reference once, within the response byte limit.',
         inputSchema: z.strictObject({
             ref: z.string().min(1).max(4096).describe('Copy the actual value of markdownRef, htmlRef, pdfRef, screenshotRef or rawDataRef into ref; do not use the output field name as an input key.'),
             format: z.enum(['markdown', 'html', 'pdf', 'screenshot', 'rawData']).describe('Must match the reference field: markdownRef uses markdown, htmlRef uses html, and so on.'),
             offset: z.number().int().min(0).default(0).describe('Start position: Unicode code points for markdown/html, bytes for binary formats. Use the preceding read result\'s nextOffset to continue.'),
-            length: z.number().int().min(1).max(4000).default(2000).describe('Chunk length from 1 to 4000 (default 2000): Unicode code points for markdown/html, or bytes for binary formats. Reduce it if the chunk exceeds the output limit.'),
+            length: z.number().int().min(1).default(8000).describe('Requested positive safe-integer chunk length (default 8000): Unicode code points for markdown/html, or bytes for binary formats. Larger requests are capped at 16000 and may be shortened to fit the output budget. Use the returned nextOffset to continue.'),
         }),
         annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     }, async (args, ctx) => guard(ctx, config, async options => {
         const bytes = Buffer.from(await client.readStorage(args.ref, options));
         const isText = args.format === 'markdown' || args.format === 'html';
         if (isText && !isUtf8(bytes)) throw new ToolFailure('INVALID_RESPONSE', 'The reference is not valid UTF-8. No text was returned.');
-        let total = bytes.length, text = '';
+        const source = isText ? bytes.toString('utf8') : '';
+        const maximum = Math.min(args.length, 16000);
+        let total = bytes.length, text = '', start = args.offset;
         if (isText) {
-            total = 0;
-            for (const point of bytes.toString('utf8')) {
-                if (total >= args.offset && total < args.offset + args.length) text += point;
+            total = 0; start = source.length;
+            let position = 0;
+            for (const point of source) {
+                if (total === args.offset) start = position;
+                if (total >= args.offset && total < args.offset + maximum) text += point;
                 total++;
+                position += point.length;
             }
         }
-        const end = Math.min(args.offset + args.length, total);
-        const output = { format: args.format, encoding: isText ? 'utf-8' : 'base64', unit: isText ? 'codePoints' : 'bytes', offset: args.offset,
-            ...(isText ? { text } : { base64: bytes.subarray(args.offset, end).toString('base64') }),
-            total, nextOffset: end < total ? end : undefined };
-        return { content: [{ type: 'text', text: JSON.stringify(output) }], structuredContent: output };
+        const points = [...text]; // Keep only the bounded window, not a code-point array of the whole reference.
+        const secrets = configuredSecrets(config);
+        const splitCredentialAt = (boundary: number) => {
+            let first: number | undefined;
+            for (const secret of secrets) {
+                const size = isText ? secret.length : Buffer.byteLength(secret);
+                const from = Math.max(0, boundary - size + 1);
+                const found = isText ? source.slice(from, boundary + size - 1).indexOf(secret)
+                    : bytes.subarray(from, boundary + size - 1).indexOf(secret, 0, 'utf8');
+                if (found >= 0 && from + found < boundary) first = Math.min(first ?? boundary, from + found);
+            }
+            return first;
+        };
+        const sensitive = () => new ToolFailure('SENSITIVE_OUTPUT', 'A chunk boundary would expose part of configured credentials. No content was returned.');
+        if (splitCredentialAt(start) !== undefined) throw sensitive();
+        const available = Math.min(maximum, Math.max(0, total - args.offset));
+        function chunk(length: number): CallToolResult {
+            const end = Math.min(args.offset + length, total);
+            const output = { format: args.format, encoding: isText ? 'utf-8' : 'base64', unit: isText ? 'codePoints' : 'bytes', offset: args.offset,
+                ...(isText ? { text: points.slice(0, length).join('') } : { base64: bytes.subarray(args.offset, end).toString('base64') }),
+                total, nextOffset: end < total ? end : undefined };
+            return { content: [{ type: 'text', text: JSON.stringify(output) }], structuredContent: output };
+        }
+        const errorCode = (result: CallToolResult) => (result.structuredContent as { error?: { code?: string } } | undefined)?.error?.code;
+        const boundary = (length: number) => isText ? start + points.slice(0, length).join('').length : args.offset + length;
+        const safeLength = (length: number) => {
+            let position = boundary(length);
+            let split: number | undefined;
+            while ((split = splitCredentialAt(position)) !== undefined) {
+                if (!isText) { length = split - args.offset; position = split; }
+                else {
+                    while (length > 0 && position > split) position -= points[--length].length;
+                }
+            }
+            return length;
+        };
+        const initial = chunk(available);
+        const initialCode = errorCode(boundResult(initial, config));
+        if (initialCode === 'SENSITIVE_OUTPUT') return initial;
+        const maximumSafe = safeLength(available);
+        if (available > 0 && maximumSafe === 0) throw sensitive();
+        const safeInitial = maximumSafe === available ? initial : chunk(maximumSafe);
+        if (errorCode(boundResult(safeInitial, config)) !== 'OUTPUT_LIMIT') return safeInitial;
+        let low = 1, high = maximumSafe - 1, selected: CallToolResult | undefined;
+        while (low <= high) {
+            const midpoint = Math.floor((low + high) / 2);
+            const length = safeLength(midpoint);
+            if (length === 0) { low = midpoint + 1; continue; }
+            const candidate = chunk(length);
+            const code = errorCode(boundResult(candidate, config));
+            if (code === 'SENSITIVE_OUTPUT') return candidate;
+            if (code === 'OUTPUT_LIMIT') high = length - 1;
+            else { selected = candidate; low = midpoint + 1; }
+        }
+        // Return raw data so the outer guard performs the actual redaction exactly once.
+        if (selected) return selected;
+        return safeInitial;
     }));
     server.registerTool('nstdata_crawl_start', {
         title: 'Start a website crawl',

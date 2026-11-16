@@ -285,15 +285,18 @@ Pass the value of `data.markdownRef` as **`ref`**, with `format: "markdown"`:
   "arguments": {
     "ref": "RETURNED_MARKDOWN_REF",
     "format": "markdown",
-    "offset": 0,
-    "length": 2000
+    "offset": 0
   }
 }
 ```
 
 Use the same mapping for htmlRef→html, pdfRef→pdf, screenshotRef→screenshot and rawDataRef→rawData. References are opaque values, not public URLs. Only read references from an authorized task.
 
-`length` is 1–4000, default 2000. Text uses Unicode code-point offsets and UTF-8; invalid UTF-8 fails with `INVALID_RESPONSE` before slicing. Binary uses byte offsets and base64 output. Continue at `nextOffset` until absent. Decode binary chunks separately before joining bytes. Every call downloads the full reference within the response cap, then slices locally; this is not HTTP Range or persistent caching.
+`length` is a positive safe integer, default 8000. Requests above 16000 are capped automatically; the returned chunk may be shorter to fit the final serialized output budget. Copy the actual `nextOffset` instead of adding the requested length. The larger request does not increase the download or output limits.
+
+Text uses Unicode code-point offsets and UTF-8; invalid UTF-8 fails with `INVALID_RESPONSE` before slicing. Binary uses byte offsets and base64 output. Offsets and `total` count original source units, even when display text is redacted. Continue at `nextOffset` until absent or the authorized read/output budget is reached. Decode binary chunks separately before joining bytes. A boundary that would expose part of configured credentials is shortened or rejected with `SENSITIVE_OUTPUT`; do not retry around that protection.
+
+Every call downloads the full reference once within the response cap, then fits the chunk locally without another download; this is not HTTP Range or persistent caching. `RESPONSE_LIMIT` concerns the whole download, so reducing `length` does not resolve it. Keep the known task and reference instead of submitting another scrape.
 
 ## Options
 

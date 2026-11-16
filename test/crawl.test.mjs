@@ -221,6 +221,37 @@ test('storage references support Unicode text continuation and lossless binary c
     assert.equal(h.requests[0].url, '/api/v1/crawl/storage/read?st=text%2Fref');
 });
 
+test('reference chunk defaults exceed 4000 and oversized safe integers clamp without another download', { timeout: 10000 }, async t => {
+    const body = 'x'.repeat(20001);
+    let reads = 0;
+    const api = http.createServer((req, res) => {
+        assert.equal(req.method, 'GET'); assert.equal(req.url, '/api/v1/crawl/storage/read?st=existing');
+        reads++; res.end(body);
+    });
+    const port = await listen(t, api);
+    const client = await inMemoryClient(t, { NSTDATA_API_TOKEN: 'fixture-token',
+        NSTDATA_API_BASE_URL: `http://127.0.0.1:${port}`, NSTDATA_MAX_OUTPUT_CHARS: '64000' });
+    for (const [length, expected] of [[undefined, 8000], [16001, 16000], [Number.MAX_SAFE_INTEGER, 16000]]) {
+        const before = reads;
+        const result = await client.callTool({ name: 'nstdata_crawl_read_result',
+            arguments: { ref: 'existing', format: 'markdown', ...(length === undefined ? {} : { length }) } });
+        assert.notEqual(result.isError, true);
+        assert.equal(result.structuredContent.text.length, expected);
+        assert.equal(result.structuredContent.text, body.slice(0, expected));
+        assert.equal(result.structuredContent.nextOffset, expected);
+        assert.equal(result.structuredContent.total, body.length);
+        assert.equal(reads, before + 1, 'clamping and output fitting must not download the reference again');
+    }
+    const beforeInvalid = reads;
+    for (const length of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, Number.MAX_VALUE]) {
+        const invalid = await client.callTool({ name: 'nstdata_crawl_read_result', arguments: { ref: 'existing', format: 'markdown', length } });
+        assert.equal(invalid.isError, true);
+    }
+    assert.equal(reads, beforeInvalid, 'invalid lengths fail before downloading');
+    const tool = (await client.listTools()).tools.find(value => value.name === 'nstdata_crawl_read_result');
+    assert.equal(tool.inputSchema.properties.length.default, 8000);
+});
+
 test('text reference chunks retain Unicode boundaries, empty content and EOF positions', { timeout: 10000 }, async t => {
     const h = await harness(t, (req, res) => res.end(req.url.includes('empty') ? '' : 'A😀中B'));
     for (const format of ['markdown', 'html']) {

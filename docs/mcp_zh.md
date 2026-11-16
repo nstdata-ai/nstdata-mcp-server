@@ -287,15 +287,18 @@ Proxy 专用变量见 [proxy_zh.md](proxy_zh.md)。未启用的模块不要求�
   "arguments": {
     "ref": "RETURNED_MARKDOWN_REF",
     "format": "markdown",
-    "offset": 0,
-    "length": 2000
+    "offset": 0
   }
 }
 ```
 
 其余对应关系为 htmlRef→html、pdfRef→pdf、screenshotRef→screenshot、rawDataRef→rawData。引用是不可解释的值，不是公开 URL；只读取获准任务返回的引用。
 
-`length` 为1–4000，默认2000。文本按 Unicode 码点偏移并以 UTF-8 返回，损坏 UTF-8 在切片前返回 `INVALID_RESPONSE`。二进制按字节偏移并以 Base64 返回。存在 `nextOffset` 时按其继续；分别解码二进制分块后再拼接字节。每次调用都会在体积上限内重新下载完整引用，再本地切片；不提供 HTTP Range 或持久缓存。
+`length` 接受正安全整数，默认8000。超过16000的请求会自动限至16000；实际返回块还可能为适应最终序列化输出预算而缩短。必须复制实际返回的 `nextOffset`，不能自行加上请求长度。更大的请求不会提高下载或输出限额。
+
+文本按 Unicode 码点偏移并以 UTF-8 返回，损坏 UTF-8 在切片前返回 `INVALID_RESPONSE`。二进制按字节偏移并以 Base64 返回。即使显示文本发生脱敏，偏移与 `total` 仍按原始源内容单位计算。存在 `nextOffset` 时，在已授权的读取／输出预算内继续；分别解码二进制分块后再拼接字节。如果边界会暴露配置凭据的片段，会缩短分块或返回 `SENSITIVE_OUTPUT`，不得通过改偏移重试绕过保护。
+
+每次调用在体积上限内完整下载引用一次，再在本地调整分块，不会为缩块再次下载；不提供 HTTP Range 或持久缓存。`RESPONSE_LIMIT` 表示整份下载超限，减小 `length` 无法解决，应保留已有任务和引用，不重新提交抓取。
 
 ## 选项与浏览器动作
 

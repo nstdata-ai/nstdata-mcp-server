@@ -315,3 +315,125 @@ test('single-row recovery stays within budget and never exposes credential-beari
     assert.doesNotMatch(JSON.stringify(sensitive), /fixture-token|private-reference|next-row/);
     assert.equal(h.requests.length, 2);
 });
+
+for (const era of ['legacy', 'modern']) {
+    test(`${era} reference chunks fit final JSON budgets and resume text and binary without extra downloads`, { timeout: 10000 }, async t => {
+        let payload;
+        const h = await harness(t, (req, res) => {
+            assert.equal(req.method, 'GET'); assert.ok(req.url.startsWith('/api/v1/crawl/storage/read?'));
+            res.end(payload);
+        }, { NSTDATA_MAX_OUTPUT_CHARS: '1024' }, era, executable);
+        for (const [format, body] of [
+            ['markdown', 'A"\\\n😀中'.repeat(300)],
+            ['pdf', Buffer.from(Array.from({ length: 2101 }, (_, index) => index % 256))],
+        ]) {
+            payload = body;
+            const source = typeof body === 'string' ? [...body] : body, chunks = [];
+            let offset = 0, calls = 0;
+            do {
+                const before = h.requests.length;
+                const result = await h.client.callTool({ name: 'nstdata_crawl_read_result',
+                    arguments: { ref: 'existing', format, offset, length: 16001 } });
+                assert.notEqual(result.isError, true);
+                assert.ok(result.content[0].text.length <= 1024);
+                assert.deepEqual(JSON.parse(result.content[0].text), result.structuredContent);
+                const output = result.structuredContent;
+                assert.equal(output.offset, offset); assert.equal(output.total, source.length);
+                const chunk = typeof body === 'string' ? [...output.text] : Buffer.from(output.base64, 'base64');
+                assert.ok(chunk.length > 0); assert.ok(chunk.length <= 16000);
+                if (typeof body === 'string') assert.deepEqual(chunk, source.slice(offset, offset + chunk.length));
+                else assert.deepEqual(chunk, source.subarray(offset, offset + chunk.length));
+                chunks.push(typeof body === 'string' ? chunk.join('') : chunk);
+                const consumed = offset + chunk.length;
+                assert.equal(output.nextOffset, consumed < source.length ? consumed : undefined);
+                assert.equal(h.requests.length, before + 1, 'local output fitting must not issue another storage download');
+                offset = output.nextOffset;
+                assert.ok(++calls <= 30, 'continuation must make bounded forward progress');
+            } while (offset !== undefined);
+            assert.ok(calls > 1, 'the small output budget must require continuation');
+            if (typeof body === 'string') assert.equal(chunks.join(''), body);
+            else assert.deepEqual(Buffer.concat(chunks), body);
+        }
+        assert.equal(h.stderr(), '');
+    });
+}
+
+test('reference fitting budgets one redaction pass while offsets count original source points', { timeout: 10000 }, async t => {
+    for (const token of ['Q', 'RED']) {
+        const body = token.repeat(1601);
+        const h = await harness(t, (_req, res) => res.end(body),
+            { NSTDATA_API_TOKEN: token, NSTDATA_MAX_OUTPUT_CHARS: '1024' }, 'legacy', executable);
+        let offset = 0, calls = 0;
+        do {
+            const before = h.requests.length;
+            const result = await h.client.callTool({ name: 'nstdata_crawl_read_result', arguments: {
+                ref: 'existing', format: 'markdown', offset, length: 16000,
+            } });
+            assert.notEqual(result.isError, true, result.structuredContent?.error?.code);
+            assert.ok(result.content[0].text.length <= 1024);
+            assert.deepEqual(JSON.parse(result.content[0].text), result.structuredContent);
+            const output = result.structuredContent;
+            const consumed = output.nextOffset ?? body.length;
+            assert.ok(consumed > offset); assert.equal((consumed - offset) % token.length, 0);
+            assert.equal(output.text, '<REDACTED>'.repeat((consumed - offset) / token.length));
+            assert.equal(output.total, body.length);
+            if (token === 'Q') assert.doesNotMatch(JSON.stringify(result), /Q/);
+            assert.equal(h.requests.length, before + 1);
+            offset = output.nextOffset;
+            assert.ok(++calls <= 30);
+        } while (offset !== undefined);
+        assert.ok(calls > 1);
+    }
+});
+
+test('reference fitting never hides sensitive binary data by trimming it out of the requested chunk', { timeout: 10000 }, async t => {
+    const bytes = Buffer.from('a'.repeat(1100) + 'fixture-token' + 'b'.repeat(900));
+    const h = await harness(t, (_req, res) => res.end(bytes),
+        { NSTDATA_MAX_OUTPUT_CHARS: '1024' }, 'legacy', executable);
+    const result = await h.client.callTool({ name: 'nstdata_crawl_read_result', arguments: {
+        ref: 'existing', format: 'rawData', length: 16000,
+    } });
+    assert.equal(result.isError, true);
+    assert.equal(result.structuredContent.error.code, 'SENSITIVE_OUTPUT');
+    assert.doesNotMatch(JSON.stringify(result), /fixture-token|Zml4dHVyZS10b2tlbg==/);
+    assert.equal(h.requests.length, 1);
+});
+
+test('reference chunk boundaries cannot split configured credentials into readable fragments', { timeout: 10000 }, async t => {
+    const prefix = '中😀before-', secret = 'fixture-token', suffix = '-after';
+    const prefixPoints = [...prefix].length;
+    let body = prefix + secret + suffix;
+    const h = await harness(t, (_req, res) => res.end(body), {}, 'legacy', executable);
+    const first = await h.client.callTool({ name: 'nstdata_crawl_read_result', arguments: {
+        ref: 'existing', format: 'markdown', length: prefixPoints + 3,
+    } });
+    assert.notEqual(first.isError, true);
+    assert.equal(first.structuredContent.text, prefix);
+    assert.equal(first.structuredContent.nextOffset, prefixPoints, 'a boundary retreat counts original Unicode points');
+    const next = await h.client.callTool({ name: 'nstdata_crawl_read_result', arguments: {
+        ref: 'existing', format: 'markdown', offset: first.structuredContent.nextOffset,
+    } });
+    assert.notEqual(next.isError, true);
+    assert.equal(next.structuredContent.text, '<REDACTED>' + suffix);
+    assert.equal(next.structuredContent.nextOffset, undefined);
+    const inside = await h.client.callTool({ name: 'nstdata_crawl_read_result', arguments: {
+        ref: 'existing', format: 'markdown', offset: prefixPoints + 1, length: 1,
+    } });
+    assert.equal(inside.structuredContent.error.code, 'SENSITIVE_OUTPUT');
+    body = secret + suffix;
+    const noProgress = await h.client.callTool({ name: 'nstdata_crawl_read_result', arguments: {
+        ref: 'existing', format: 'markdown', length: 3,
+    } });
+    assert.equal(noProgress.structuredContent.error.code, 'SENSITIVE_OUTPUT');
+    assert.equal(h.requests.length, 4);
+    const overlapping = await harness(t, (_req, res) => res.end('A'.repeat(17000)),
+        { NSTDATA_API_TOKEN: 'AA', NSTDATA_MAX_OUTPUT_CHARS: '1024' }, 'legacy', executable);
+    const withheld = await overlapping.client.callTool({ name: 'nstdata_crawl_read_result', arguments: {
+        ref: 'existing', format: 'markdown', length: Number.MAX_SAFE_INTEGER,
+    } });
+    assert.equal(withheld.isError, true);
+    assert.equal(withheld.structuredContent.error.code, 'SENSITIVE_OUTPUT');
+    assert.equal(withheld.structuredContent.text, undefined);
+    assert.doesNotMatch(JSON.stringify(withheld), /AA|QUFB/);
+    assert.equal(overlapping.requests.length, 1);
+});
