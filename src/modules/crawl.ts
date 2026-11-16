@@ -15,7 +15,7 @@ export function registerCrawlTools(server: McpServer, client: NstDataClient, con
             ref: z.string().min(1).max(4096).describe('Copy the actual value of markdownRef, htmlRef, pdfRef, screenshotRef or rawDataRef into ref; do not use the output field name as an input key.'),
             format: z.enum(['markdown', 'html', 'pdf', 'screenshot', 'rawData']).describe('Must match the reference field: markdownRef uses markdown, htmlRef uses html, and so on.'),
             offset: z.number().int().min(0).default(0).describe('Start position: Unicode code points for markdown/html, bytes for binary formats. Use the preceding read result\'s nextOffset to continue.'),
-            length: z.number().int().min(1).max(4000).default(2000).describe('Maximum Unicode code points for markdown/html, or bytes for binary formats, in this chunk. Reduce it if the chunk exceeds the output limit.'),
+            length: z.number().int().min(1).max(4000).default(2000).describe('Chunk length from 1 to 4000 (default 2000): Unicode code points for markdown/html, or bytes for binary formats. Reduce it if the chunk exceeds the output limit.'),
         }),
         annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     }, async (args, ctx) => guard(ctx, config, async options => {
