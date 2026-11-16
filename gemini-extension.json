@@ -1,6 +1,7 @@
 {
   "name": "nstdata",
   "version": "1.0.3",
+  "description": "Retrieve webpage content with Nstdata Crawl.",
   "mcpServers": {
     "nstdata": {
       "command": "npx",

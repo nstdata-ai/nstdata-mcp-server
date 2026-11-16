@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Tool metadata
+
+- Add readable titles and explicit safety hints to tool discovery for local and Remote clients.
+- Describe the Crawl extension in Gemini CLI gallery metadata.
+
 ### Client distribution
 
 - Pin Cursor, Codex and Claude Code plugins to the 1.0.3 stdio package.
