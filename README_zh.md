@@ -30,7 +30,7 @@
   "mcpServers": {
     "nstdata": {
       "command": "npx",
-      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.3"],
+      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.4"],
       "env": {
         "NSTDATA_MODULES": "crawl",
         "NSTDATA_API_TOKEN": "YOUR_CRAWL_API_TOKEN"
@@ -50,7 +50,7 @@
 ```toml
 [mcp_servers.nstdata]
 command = "npx"
-args = ["--yes", "@nstdata-ai/mcp-server@1.0.3"]
+args = ["--yes", "@nstdata-ai/mcp-server@1.0.4"]
 
 [mcp_servers.nstdata.env]
 NSTDATA_API_TOKEN = "YOUR_CRAWL_API_TOKEN"

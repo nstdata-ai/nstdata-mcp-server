@@ -31,7 +31,7 @@
   "mcpServers": {
     "nstdata": {
       "command": "npx",
-      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.3"],
+      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.4"],
       "env": {
         "NSTDATA_MODULES": "crawl",
         "NSTDATA_API_TOKEN": "YOUR_CRAWL_API_TOKEN"
@@ -49,7 +49,7 @@ Cursor 的本地服务也可通过 `envFile` 加载受保护凭据文件；使�
 
 ```sh
 claude mcp add --scope user --env 'NSTDATA_API_TOKEN=${NSTDATA_API_TOKEN:-}' \
-  --transport stdio nstdata -- npx --yes @nstdata-ai/mcp-server@1.0.3
+  --transport stdio nstdata -- npx --yes @nstdata-ai/mcp-server@1.0.4
 ```
 
 若当前终端已从受保护环境或凭据管理器取得 `NSTDATA_API_TOKEN`，从该终端启动 Claude Code；启动服务时会展开引用。若尚未配置环境变量，注册后、连接前打开用户 `~/.claude.json`，在这个受保护文件内将 `mcpServers.nstdata.env.NSTDATA_API_TOKEN` 改为真实 Key，保留现有命令及其他条目。这样不需要把真实 Key 写入终端历史。在 Claude Code 中用 `/mcp` 检查连接和工具；注册成功不等于启动或凭据验收通过。
@@ -64,7 +64,7 @@ claude mcp add --scope user --env 'NSTDATA_API_TOKEN=${NSTDATA_API_TOKEN:-}' \
     "nstdata": {
       "type": "stdio",
       "command": "npx",
-      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.3"],
+      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.4"],
       "env": {
         "NSTDATA_MODULES": "crawl",
         "NSTDATA_API_TOKEN": "YOUR_CRAWL_API_TOKEN"
@@ -85,7 +85,7 @@ claude mcp add --scope user --env 'NSTDATA_API_TOKEN=${NSTDATA_API_TOKEN:-}' \
   "mcp": {
     "nstdata": {
       "type": "local",
-      "command": ["npx", "--yes", "@nstdata-ai/mcp-server@1.0.3"],
+      "command": ["npx", "--yes", "@nstdata-ai/mcp-server@1.0.4"],
       "environment": {
         "NSTDATA_MODULES": "crawl",
         "NSTDATA_API_TOKEN": "YOUR_CRAWL_API_TOKEN"
