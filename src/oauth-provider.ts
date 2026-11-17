@@ -241,8 +241,15 @@ return n
             },
         });
     } catch { throw new Error('Invalid OAuth provider configuration'); }
-    // Keep discovery aligned with the OAuth resource rather than unused OpenID internals.
     provider.use(async (ctx, next) => {
+        // Ask for explicit offline consent before the provider filters scopes; preserve a client's chosen prompt.
+        if (ctx.method === 'GET' && ctx.path === provider.pathFor('authorization')) {
+            const query = new URLSearchParams(ctx.querystring);
+            if (!query.has('prompt') && query.getAll('scope').length === 1 &&
+                query.get('scope')?.split(' ').includes('offline_access')) {
+                ctx.querystring += `${ctx.querystring ? '&' : ''}prompt=consent`;
+            }
+        }
         if (ctx.path === provider.pathFor('registration') && ctx.method === 'POST' && !await admit('registration', 30)) {
             ctx.status = 429; ctx.set('Retry-After', '60'); ctx.body = { error: 'temporarily_unavailable' }; return;
         }
@@ -273,6 +280,7 @@ return n
                 }
             } else if (policy) ctx.set('Content-Security-Policy', policy.replace(/form-action[^;]*/, `form-action 'self' ${callbackUrl.origin}`));
         }
+        // Keep discovery aligned with the OAuth resource rather than unused OpenID internals.
         if (ctx.status === 200 && ctx.path === '/.well-known/openid-configuration' && ctx.body && typeof ctx.body === 'object') {
             (ctx.body as Record<string, unknown>).scopes_supported = [...scopes];
         }

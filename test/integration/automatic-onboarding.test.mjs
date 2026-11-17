@@ -98,8 +98,8 @@ test('automatic Remote onboarding uses public OAuth clients and independent per-
             code_challenge_method: 'S256', code_challenge: createHash('sha256').update(verifier).digest('base64url'), ...parameters })}`;
         return { url, verifier, state, redirect, client };
     }
-    async function authorize(client, key) {
-        const page = browser(), flow = authorizationUrl(client);
+    async function authorize(client, key, parameters = {}) {
+        const page = browser(), flow = authorizationUrl(client, parameters);
         let response = await page.fetch(flow.url);
         const interaction = new URL(response.headers.get('location'), origin);
         assert.equal(interaction.origin, origin);
@@ -136,6 +136,8 @@ test('automatic Remote onboarding uses public OAuth clients and independent per-
     }
     const exchange = (flow, change = {}) => token({ client_id: flow.client.client_id, grant_type: 'authorization_code', code: flow.code,
         code_verifier: flow.verifier, redirect_uri: flow.redirect, resource, ...change });
+    const refresh = (client, raw, scope) => token({ client_id: client.client_id, grant_type: 'refresh_token',
+        refresh_token: raw, resource, ...(scope === undefined ? {} : { scope }) });
     async function ipv6Callback(page, response, flow) {
         for (let budget = 0; budget < 6; budget++) {
             if (response.status === 200) {
@@ -442,5 +444,94 @@ test('automatic Remote onboarding uses public OAuth clients and independent per-
         assert.equal((await client.listTools()).tools.length, 6);
         assert.equal(authorizations.length, before, 'direct keys must not reactivate a revoked OAuth binding');
         assert.equal(await actualCredentials.resolve(binding.id, binding.version), null);
+    });
+    await t.test('public OAuth preserves requested offline access without an OIDC consent prompt', async () => {
+        for (const parameters of [{}, { prompt: 'consent' }]) {
+            const issued = await exchange(await authorize(clientA, keys.A, { scope: 'crawl:use offline_access', ...parameters }));
+            assert.equal(issued.status, 200, issued.payload.error);
+            let auth = issued.payload;
+            assert(auth.access_token && auth.refresh_token);
+            assert.equal(auth.scope, 'crawl:use', 'the resource access token remains Crawl-only');
+            for (const scope of ['crawl:use offline_access', undefined, 'crawl:use']) {
+                const refreshed = await refresh(clientA, auth.refresh_token, scope);
+                assert.equal(refreshed.status, 200, refreshed.payload.error_description ?? refreshed.payload.error);
+                assert(refreshed.payload.access_token && refreshed.payload.refresh_token);
+                assert.notEqual(refreshed.payload.refresh_token, auth.refresh_token);
+                assert.equal(refreshed.payload.scope, 'crawl:use');
+                auth = refreshed.payload;
+            }
+            const client = await connect({ authorization: `Bearer ${auth.access_token}` });
+            assert.equal((await client.listTools()).tools.length, 6);
+        }
+    });
+    await t.test('invalid refresh scopes cannot expand an original grant or consume its refresh token', async () => {
+        for (const [initialScope, rejectedScope, missingScope] of [
+            ['crawl:use', 'crawl:use offline_access', 'offline_access'],
+            ['crawl:use offline_access', 'crawl:use offline_access proxy:use', 'proxy:use'],
+        ]) {
+            const issued = await exchange(await authorize(clientA, keys.A, { scope: initialScope }));
+            assert.equal(issued.status, 200, issued.payload.error);
+            const rejected = await refresh(clientA, issued.payload.refresh_token, rejectedScope);
+            assert.equal(rejected.status, 400);
+            assert.equal(rejected.payload.error, 'invalid_scope');
+            assert.equal(rejected.payload.scope, missingScope, 'error.scope identifies the missing scope, not an issued token scope');
+            assert.equal(rejected.payload.access_token, undefined); assert.equal(rejected.payload.refresh_token, undefined);
+            assert.equal((await protectedRequest({ authorization: `Bearer ${issued.payload.access_token}` })).status, 200);
+            const recovered = await refresh(clientA, issued.payload.refresh_token);
+            assert.equal(recovered.status, 200, 'scope rejection must not consume the original refresh token');
+            assert.notEqual(recovered.payload.refresh_token, issued.payload.refresh_token);
+            assert.equal((await protectedRequest({ authorization: `Bearer ${recovered.payload.access_token}` })).status, 200);
+            if (initialScope === 'crawl:use') {
+                const expansion = await refresh(clientA, recovered.payload.refresh_token, 'crawl:use offline_access');
+                assert.equal(expansion.status, 400); assert.equal(expansion.payload.error, 'invalid_scope');
+                assert.equal(expansion.payload.access_token, undefined); assert.equal(expansion.payload.refresh_token, undefined);
+            }
+        }
+    });
+    await t.test('offline consent preserves explicit prompts, duplicate-parameter rejection and GET-only authorization', async () => {
+        const before = [verifiedKeys.length, authorizations.length, grantWrites.size];
+        const noPrompt = await fetch(authorizationUrl(clientA, { scope: 'crawl:use offline_access', prompt: 'none' }).url, { redirect: 'manual' });
+        const destination = new URL(noPrompt.headers.get('location'), origin);
+        assert.equal(destination.pathname, new URL(clientA.redirect_uris[0]).pathname);
+        assert.equal(destination.searchParams.get('error'), 'login_required');
+        await noPrompt.arrayBuffer();
+        const flow = authorizationUrl(clientA, { scope: 'crawl:use offline_access', prompt: 'consent' });
+        for (const duplicate of ['scope=crawl%3Ause', 'prompt=none']) {
+            const response = await fetch(`${flow.url}&${duplicate}`, { redirect: 'manual' });
+            const next = response.headers.get('location'), text = await response.text();
+            if (next) assert.equal(new URL(next, origin).searchParams.get('error'), 'invalid_request');
+            else assert.equal(JSON.parse(text).error, 'invalid_request');
+        }
+        const post = await fetch(metadata.authorization_endpoint, { method: 'POST',
+            headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URL(flow.url).searchParams });
+        await post.arrayBuffer(); assert.equal(post.status, 404);
+        assert.deepEqual([verifiedKeys.length, authorizations.length, grantWrites.size], before);
+    });
+    await t.test('an expired public access token refreshes with its requested scope and resumes MCP tools', async () => {
+        await application.close(); application = createRemoteHandler({ ...options, ttl: { ...options.ttl, AccessToken: 2 } });
+        const issued = await exchange(await authorize(clientA, keys.A, { scope: 'crawl:use offline_access' }));
+        assert.equal(issued.status, 200); assert.equal(issued.payload.expires_in, 2);
+        let auth = { ...issued.payload, issuer: origin }, refreshes = 0;
+        const authProvider = {
+            redirectUrl: clientA.redirect_uris[0], clientMetadata: publicClient('A'),
+            clientInformation: () => ({ ...clientA, issuer: origin }), tokens: () => auth,
+            saveTokens: value => { auth = value; },
+            redirectToAuthorization: () => assert.fail('an unexpired refresh token must not require new authorization'),
+            saveCodeVerifier: () => assert.fail('refresh must not start a new PKCE flow'), codeVerifier: () => assert.fail('refresh does not use a code verifier'),
+            addClientAuthentication: (_headers, params) => {
+                assert.equal(params.get('grant_type'), 'refresh_token');
+                params.set('client_id', clientA.client_id); params.set('scope', 'crawl:use offline_access'); refreshes++;
+            },
+        };
+        const client = new Client({ name: 'public-refresh-fixture', version: '1.0.0' }, { versionNegotiation: { mode: { pin: '2026-07-28' } } });
+        connected.push(client);
+        await client.connect(new StreamableHTTPClientTransport(new URL(resource), { authProvider }));
+        assert.equal((await client.listTools()).tools.length, 6);
+        const expired = auth, beforeRefresh = refreshes;
+        await new Promise(resolve => setTimeout(resolve, 2100));
+        assert.equal((await protectedRequest({ authorization: `Bearer ${expired.access_token}` })).status, 401);
+        assert.equal((await client.listTools()).tools.length, 6);
+        assert.equal(refreshes, beforeRefresh + 1); assert.notEqual(auth.refresh_token, expired.refresh_token);
+        assert.equal(auth.scope, 'crawl:use');
     });
 });

@@ -8,7 +8,7 @@ export function binaryContent(bytes: Buffer | undefined): Record<string, string>
     return bytes === undefined ? undefined : { [inlineBinary]: true, encoding: 'base64', base64: bytes.toString('base64') };
 }
 
-export function boundResult(result: CallToolResult, config: Config): CallToolResult {
+export function configuredSecrets(config: Config): string[] {
     const secrets = [config.apiToken];
     if (config.proxyURL) {
         const proxy = new URL(config.proxyURL);
@@ -16,7 +16,11 @@ export function boundResult(result: CallToolResult, config: Config): CallToolRes
         secrets.push(config.proxyURL, proxy.username, proxy.password, username, password);
         if (username || password) secrets.push(Buffer.from(`${username}:${password}`).toString('base64'));
     }
-    const knownSecrets = secrets.filter((secret): secret is string => !!secret).sort((a, b) => b.length - a.length);
+    return secrets.filter((secret): secret is string => !!secret).sort((a, b) => b.length - a.length);
+}
+
+export function boundResult(result: CallToolResult, config: Config): CallToolResult {
+    const knownSecrets = configuredSecrets(config);
     const redact = (value: string) => knownSecrets.reduce((text, secret) => text.replaceAll(secret, '<REDACTED>'), value);
     const original = (result.structuredContent ?? {}) as Record<string, unknown>;
     const literalFields = new Set(['encoding', 'format', 'unit', 'status']);
