@@ -42,9 +42,7 @@
 
 ### 第一步 准备账号
 
-从 [Nstdata 控制台](https://app.nstdata.io/?utm_source=github&utm_medium=social&utm_campaign=mcp&utm_content=readme)获取有效的 Crawl API Key，并确认账号具有 Crawl 权限和可用额度。
-
-当前 OAuth 授权页需要输入 **Nstdata API Key**。它不是控制台账号登录页，也不是免 Key 模式。
+从 [Nstdata 控制台](https://app.nstdata.io/?utm_source=github&utm_medium=social&utm_campaign=mcp&utm_content=readme)获取 **Nstdata API Key**，用于连接 MCP 和调用抓取服务。连接托管 MCP 时，在授权页面输入同一个 API Key 即可。请确保账号有可用额度。
 
 ### 第二步 选择客户端
 
@@ -334,7 +332,7 @@ http://DEMOCHANNEL001-residential_lite-country_AU-r_10m-s_demo01:DEMO_PASSWORD@g
 
 </details>
 
-仅 Proxy 模式提供两个工具，无需 Crawl API Key。同时使用时设置 `NSTDATA_MODULES=crawl,proxy`，并提供两种凭据，一个本地进程共提供八个工具。不支持 SOCKS 代理。
+仅 Proxy 模式提供两个工具，无需 Nstdata API Key。同时使用时设置 `NSTDATA_MODULES=crawl,proxy`，并提供两种凭据，一个本地进程共提供八个工具。不支持 SOCKS 代理。
 
 试一试：“只调用一次 `nstdata_proxy_check`，返回检测结果；失败时报告错误，不重试。”上例的检测目标可回显出口 IP；默认 `https://example.com/` 只检查连通性。详见 [Proxy 指南](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/docs/proxy_zh.md)。
 

@@ -42,9 +42,7 @@ Start with a known URL. This server does not provide web search. Requests use yo
 
 ### 1. Prepare your account
 
-Get a valid Crawl API key from the [Nstdata dashboard](https://app.nstdata.io/?utm_source=github&utm_medium=social&utm_campaign=mcp&utm_content=readme) and ensure your account has Crawl access and available credits.
-
-The current OAuth authorization page asks for your **Nstdata API key**. It does not sign you into your dashboard account and is not a keyless mode.
+Get your **Nstdata API Key** from the [Nstdata dashboard](https://app.nstdata.io/?utm_source=github&utm_medium=social&utm_campaign=mcp&utm_content=readme) to connect to MCP and call the Crawl API. When connecting to hosted MCP, enter the same API key on the authorization page. Make sure your account has available credits.
 
 ### 2. Choose your client
 
@@ -334,7 +332,7 @@ Use your dashboard-generated value rather than constructing credentials from thi
 
 </details>
 
-Proxy-only mode exposes two tools and does not require a Crawl API key. Set `NSTDATA_MODULES=crawl,proxy` and supply both credentials to enable eight tools in one local process. SOCKS proxies are not supported.
+Proxy-only mode exposes two tools and does not require a Nstdata API Key. Set `NSTDATA_MODULES=crawl,proxy` and supply both credentials to enable eight tools in one local process. SOCKS proxies are not supported.
 
 Try: “Call `nstdata_proxy_check` once. Report its result; if it fails, report the error without retrying.” The configured target above can return an exit IP; the default `https://example.com/` only checks connectivity. See the [Proxy guide](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/docs/proxy.md).
 
