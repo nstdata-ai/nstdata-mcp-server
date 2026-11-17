@@ -104,7 +104,8 @@ net.Socket.prototype.connect=function(...args){
             const application = path.join(temp, 'documented-install-' + index); fs.mkdirSync(application);
             fs.writeFileSync(path.join(application, 'package.json'), '{"private":true,"type":"module"}');
             const localEnv = { ...env, npm_config_cache: path.join(application, 'cache') };
-            const commands = shellCommands(fs.readFileSync(path.join(root, readme), 'utf8'));
+            const commands = shellCommands(fs.readFileSync(path.join(root, readme), 'utf8'))
+                .filter(command => ['npm', 'npx'].includes(command[0]));
             assert.deepEqual(commands, [['npm', 'install', manifest.name],
                 ['npx', '--yes', manifest.name, '--help'], ['npx', '--yes', manifest.name, '--version']]);
             await execute(process.execPath, [process.env.npm_execpath, ...commands[0].slice(1)], { cwd: application, env: localEnv, timeout: 60000 });
@@ -124,7 +125,8 @@ net.Socket.prototype.connect=function(...args){
                     'Local installation must not install Remote-only runtime dependencies');
             }
             assert.equal(fs.existsSync(path.join(application, 'node_modules/@nstdata-ai/ip-lookup')), false);
-            const [crawl, proxy] = configs[index].map(value => value.mcpServers.nstdata);
+            const crawl = configs[index][2].mcpServers['nstdata-local'];
+            const proxy = configs[index][3].mcpServers['nstdata-proxy'];
             const combined = { ...crawl, env: { ...crawl.env, ...proxy.env, NSTDATA_MODULES: 'crawl,proxy' } };
             for (const config of [crawl, proxy, combined]) {
                 assert.equal(config.command, 'npx');

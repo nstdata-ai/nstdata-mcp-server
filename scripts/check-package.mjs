@@ -57,7 +57,8 @@ try {
     assert.equal(lock.packages['node_modules/@nstdata-ai/ip-lookup'], undefined);
     assert.equal(lock.packages['node_modules/@nstdata-ai/crawl'].version, manifest.dependencies['@nstdata-ai/crawl']);
     for (const file of ['README.md', 'README_zh.md']) {
-        assert.deepEqual(shellCommands(fs.readFileSync(path.join(root, file), 'utf8'))[0], ['npm', 'install', manifest.name]);
+        assert.deepEqual(shellCommands(fs.readFileSync(path.join(root, file), 'utf8'))[0],
+            ['codex', 'mcp', 'add', 'nstdata', '--url', 'https://mcp.nstdata.io/crawl']);
     }
     assert.ok(fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8').split('\n').includes(`## ${manifest.version}`), 'Missing version in changelog');
     assert.doesNotMatch(JSON.stringify(manifest) + JSON.stringify(lock), /file:|_planning/);
@@ -88,8 +89,11 @@ try {
     const jsonBlocks = name => [...fs.readFileSync(path.join(root, name), 'utf8').matchAll(/```json\n([\s\S]*?)```/g)].map(block => JSON.parse(block[1]));
     const configs = [['README.md', 'docs/proxy.md'], ['README_zh.md', 'docs/proxy_zh.md']].map(names => {
         const all = names.flatMap(jsonBlocks).filter(value => value.mcpServers);
-        assert.equal(all.length, 2);
-        assert.equal(all[1].mcpServers.nstdata.env.NSTDATA_MODULES, 'proxy');
+        assert.equal(all.length, 5);
+        assert.equal(all[0].mcpServers.nstdata.url, 'https://mcp.nstdata.io/crawl');
+        assert.deepEqual(all[1].mcpServers['nstdata-key'].headers, { 'X-API-Key': 'YOUR_NSTDATA_API_KEY' });
+        assert.equal(all[3].mcpServers['nstdata-proxy'].env.NSTDATA_MODULES, 'proxy');
+        assert.equal(all[4].mcpServers.nstdata.env.NSTDATA_MODULES, 'proxy');
         return all;
     });
     assert.deepEqual(configs[0], configs[1]);
@@ -99,8 +103,11 @@ try {
     assert.deepEqual(['README.md', 'docs/proxy.md'].flatMap(name => [...fs.readFileSync(path.join(root, name), 'utf8').matchAll(/```sh\n([\s\S]*?)```/g)].map(value => value[1])),
         ['README_zh.md', 'docs/proxy_zh.md'].flatMap(name => [...fs.readFileSync(path.join(root, name), 'utf8').matchAll(/```sh\n([\s\S]*?)```/g)].map(value => value[1])));
     for (const language of configs) for (const representation of language) {
-        assert.equal(representation.mcpServers.nstdata.command, 'npx');
-        assert.deepEqual(representation.mcpServers.nstdata.args, ['--yes', `${manifest.name}@${manifest.version}`]);
+        for (const server of Object.values(representation.mcpServers)) {
+            if (server.url) continue;
+            assert.equal(server.command, 'npx');
+            assert.deepEqual(server.args, ['--yes', `${manifest.name}@${manifest.version}`]);
+        }
     }
     const dependencies = { dependencies: manifest.dependencies, devDependencies: manifest.devDependencies };
     assert.deepEqual(lock.packages[''].dependencies, manifest.dependencies);
