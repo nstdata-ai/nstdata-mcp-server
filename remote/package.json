@@ -1,6 +1,6 @@
 {
   "name": "@nstdata-ai/mcp-server-remote",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "private": true,
   "description": "Self-hosted Nstdata Remote MCP service",
   "type": "module",

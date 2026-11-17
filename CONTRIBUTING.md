@@ -44,10 +44,10 @@ Maintainers can publish a checked Linux AMD64 image with the manual `Publish Rem
 
 ## Local package installation
 
-After the checks pass, run `npm pack` to build `nstdata-ai-mcp-server-1.0.4.tgz`. Install it from a separate application directory:
+After the checks pass, run `npm pack` to build `nstdata-ai-mcp-server-1.0.5.tgz`. Install it from a separate application directory:
 
 ```sh
-npm install --ignore-scripts /path/to/nstdata-ai-mcp-server-1.0.4.tgz
+npm install --ignore-scripts /path/to/nstdata-ai-mcp-server-1.0.5.tgz
 ```
 
 Configure the installed package using the README template; do not point clients at source files.
