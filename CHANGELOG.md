@@ -23,6 +23,14 @@
 - Return to IPv6 callbacks through a browser navigation page; reject IPv6 `form_post` before consent instead of consuming an authorization that cannot return.
 - Keep idle Redis connections active with bounded heartbeats and identify service failures without exposing connection details.
 
+## 1.0.5
+
+### Reference reading
+
+- Read 8000 units by default and cap larger positive safe-integer requests at 16000 units instead of rejecting requests above 4000.
+- Fit each chunk within the final redacted JSON or Base64 output budget and continue from the returned `nextOffset`; a response may contain fewer units than requested.
+- Preserve Unicode code-point offsets, one reference download per call and credential protection across chunk boundaries.
+
 ## 1.0.4
 
 ### Stdio tool metadata
