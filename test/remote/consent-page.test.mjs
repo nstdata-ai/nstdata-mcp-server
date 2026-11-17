@@ -89,14 +89,19 @@ test('consent permits only the validated callback origin while retaining every o
     }
     for (const uri of ['javascript:alert(1)', 'data:text/plain,example', 'not a URL']) assert.throws(() => consentFormCsp(uri));
     assert.equal(consentFormCsp('http://[::1]:52767/callback'), consentPageCsp);
+    assert.equal(consentFormCsp('cursor://anysphere.cursor-mcp/oauth/callback'), consentPageCsp);
+    assert.throws(() => consentFormCsp('cursor://other.example/oauth/callback'));
     assert.match(consentPageCsp, /form-action 'self';/);
 });
 
-test('IPv6 return page preserves the callback in escaped navigation and fallback without scripts', () => {
-    const uri = 'http://[::1]:52767/callback?code=synthetic&state=%22%3E%3Cscript%3E&iss=https%3A%2F%2Fissuer.invalid';
+test('application return pages preserve complete HTTP, HTTPS and Cursor callbacks without scripts', () => {
+    for (const base of ['http://[::1]:52767/callback', 'http://localhost:8787/callback', 'https://www.cursor.com/agents/mcp/oauth/callback', 'cursor://anysphere.cursor-mcp/oauth/callback']) {
+    const uri = `${base}?fixed=one%20two&code=synthetic&state=%22%3E%3Cscript%3E&iss=https%3A%2F%2Fissuer.invalid`;
     const html = renderCallbackPage(uri), escaped = uri.replaceAll('&', '&amp;');
     assert(html.includes(`<meta http-equiv="refresh" content="0;url=${escaped}">`));
     assert(html.includes(`<a href="${escaped}">continue to your application</a>`));
     assert.doesNotMatch(html, /<form\b|<input\b|<script\b|\son\w+=/i);
-    for (const value of ['javascript:alert(1)', 'data:text/html,example', 'http://user:password@[::1]/']) assert.throws(() => renderCallbackPage(value));
+    }
+    for (const value of ['javascript:alert(1)', 'data:text/html,example', 'http://user:password@[::1]/',
+        'cursor://attacker.example/oauth/callback', 'cursor://anysphere.cursor-mcp/other']) assert.throws(() => renderCallbackPage(value));
 });

@@ -6,6 +6,8 @@
 
 使用 [Remote MCP](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/docs/remote_zh.md) 的 `https://mcp.nstdata.io/crawl` 地址，通过 OAuth 接入托管 Crawl，无需在本机安装 Node.js 或 `npx`。下方本地 stdio 配置提供 Crawl 和 HTTP／HTTPS Proxy 工具。
 
+自托管时请查阅 Remote 指南中的回调要求，包括浏览器返回页和支持的 Cursor native 回调地址。
+
 ## 接入
 
 本地 stdio 需要 Node.js 22（22.18及以上）或24，并能从 PATH 找到 `npx`。从 [Nstdata 控制台](https://app.nstdata.io/)获取 Crawl API Key，选择对应客户端的配置格式；无需先安装到 Node.js 项目。

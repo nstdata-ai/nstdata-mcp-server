@@ -9,6 +9,7 @@ import { createHash, generateKeyPairSync, randomBytes } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { isolatedRedis } from './redis-fixture.mjs';
 import { remoteCli } from '../helpers.mjs';
+import { callbackFromResponse } from '../callback-page.mjs';
 
 const executable = pathToFileURL(remoteCli);
 const upstream = 'https://automatic-onboarding.invalid';
@@ -92,11 +93,11 @@ test('automatic Remote onboarding uses public OAuth clients and independent per-
     }
     function authorizationUrl(client, parameters = {}) {
         const verifier = randomBytes(32).toString('base64url'), state = randomBytes(12).toString('hex');
-        const redirect = new URL(new URL(client.redirect_uris[0]).pathname, origin).href;
+        const redirect = parameters.redirect_uri ?? client.redirect_uris[0];
         const url = `${metadata.authorization_endpoint}?${new URLSearchParams({ client_id: client.client_id,
             redirect_uri: redirect, response_type: 'code', scope: 'crawl:use', resource, state,
             code_challenge_method: 'S256', code_challenge: createHash('sha256').update(verifier).digest('base64url'), ...parameters })}`;
-        return { url, verifier, state, redirect, client };
+        return { url, verifier, state, redirect, client, responseMode: parameters.response_mode };
     }
     async function authorize(client, key, parameters = {}) {
         const page = browser(), flow = authorizationUrl(client, parameters);
@@ -110,20 +111,26 @@ test('automatic Remote onboarding uses public OAuth clients and independent per-
         const displayName = client.client_name.replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
         assert(html.includes(displayName), 'consent escapes the dynamically registered client name');
         assert(html.includes(client.client_id), 'consent displays the resolved client identifier');
-        assert(html.includes(new URL(flow.redirect).origin), 'consent displays the actual validated callback origin');
+        assert(html.includes(new URL(flow.redirect).protocol === 'cursor:' ? flow.redirect.replaceAll('&', '&amp;') : new URL(flow.redirect).origin), 'consent displays the actual validated callback');
         const csrf = /name="csrf" value="([^"]+)"/.exec(html)?.[1]; assert(csrf);
         response = await page.fetch(interaction, { method: 'POST', headers: { origin, 'content-type': 'application/x-www-form-urlencoded' },
             body: new URLSearchParams({ csrf, apiToken: key, decision: 'allow' }) });
         for (let budget = 0; budget < 6; budget++) {
+            if (response.status === 200) {
+                const callback = await callbackFromResponse(response, noKey); noKey(callback.href);
+                const selected = new URL(flow.redirect);
+                assert.equal(callback.protocol, selected.protocol);
+                assert.equal(callback.host, selected.host);
+                assert.equal(callback.pathname, selected.pathname);
+                for (const [name, value] of selected.searchParams) assert.equal(callback.searchParams.get(name), value);
+                const result = flow.responseMode === 'fragment' ? new URLSearchParams(callback.hash.slice(1)) : callback.searchParams;
+                assert.equal(result.get('state'), flow.state);
+                assert.equal(result.get('iss'), origin);
+                assert(result.get('code'));
+                return { ...flow, code: result.get('code'), page, interaction, csrf };
+            }
             assert([302, 303].includes(response.status), `authorization redirect status=${response.status}`);
             const next = new URL(response.headers.get('location'), origin);
-            if (next.pathname === new URL(flow.redirect).pathname) {
-                assert.equal(next.origin, origin);
-                assert.equal(next.searchParams.get('state'), flow.state);
-                assert.equal(next.searchParams.get('iss'), origin);
-                assert(next.searchParams.get('code'));
-                return { ...flow, code: next.searchParams.get('code') };
-            }
             assert.equal(next.origin, origin);
             response = await page.fetch(next);
         }
@@ -138,19 +145,12 @@ test('automatic Remote onboarding uses public OAuth clients and independent per-
         code_verifier: flow.verifier, redirect_uri: flow.redirect, resource, ...change });
     const refresh = (client, raw, scope) => token({ client_id: client.client_id, grant_type: 'refresh_token',
         refresh_token: raw, resource, ...(scope === undefined ? {} : { scope }) });
-    async function ipv6Callback(page, response, flow) {
+    async function applicationCallback(page, response, flow) {
         for (let budget = 0; budget < 6; budget++) {
             if (response.status === 200) {
-                assert.equal(response.headers.get('location'), null);
-                assert.match(response.headers.get('content-type'), /^text\/html/);
-                const csp = response.headers.get('content-security-policy');
-                assert.equal(csp.split(';').map(value => value.trim()).find(value => value.startsWith('form-action ')), "form-action 'self'");
-                assert.doesNotMatch(csp, /\[::1\]/);
-                const html = await response.text(); noKey(html);
-                const target = /<meta http-equiv="refresh" content="0;url=([^"]+)">/.exec(html)?.[1];
-                assert(target, 'the final IPv6 response provides a meta-refresh bridge');
-                assert(target.includes('&amp;'), 'query separators are HTML-escaped');
-                const callback = new URL(target.replaceAll('&amp;', '&'));
+                const callback = await callbackFromResponse(response, noKey); noKey(callback.href);
+                assert.equal(callback.protocol, new URL(flow.redirect).protocol);
+                assert.equal(callback.host, new URL(flow.redirect).host);
                 assert.equal(callback.origin, new URL(flow.redirect).origin);
                 assert.equal(callback.pathname, new URL(flow.redirect).pathname);
                 assert.equal(callback.searchParams.get('state'), flow.state);
@@ -285,6 +285,10 @@ test('automatic Remote onboarding uses public OAuth clients and independent per-
         for (const parameters of [{ code_challenge: '', code_challenge_method: '' }, { redirect_uri: `${origin}/unregistered` }, { scope: 'proxy:use' }, { resource: `${origin}/wrong` }]) {
             const page = browser();
             const response = await page.fetch(authorizationUrl(clientA, parameters).url);
+            if (response.status === 200) {
+                const callback = await callbackFromResponse(response);
+                assert(callback.searchParams.has('error')); continue;
+            }
             const location = response.headers.get('location');
             const next = location && new URL(location, origin);
             if (next?.pathname.startsWith('/oauth/interaction/')) {
@@ -323,7 +327,7 @@ test('automatic Remote onboarding uses public OAuth clients and independent per-
         const before = [verifiedKeys.length, authorizations.length, grantWrites.size];
         response = await page.fetch(interaction, { method: 'POST', headers: { origin, 'content-type': 'application/x-www-form-urlencoded' },
             body: new URLSearchParams({ csrf, apiToken: keys.A, decision: 'allow' }) });
-        const callback = await ipv6Callback(page, response, flow);
+        const callback = await applicationCallback(page, response, flow);
         assert.equal(callback.searchParams.get('error'), null);
         assert(callback.searchParams.get('code'));
         assert.deepEqual([verifiedKeys.length, authorizations.length, grantWrites.size], before.map(value => value + 1));
@@ -343,7 +347,7 @@ test('automatic Remote onboarding uses public OAuth clients and independent per-
         const csrf = /name="csrf" value="([^"]+)"/.exec(html)?.[1]; assert(csrf);
         response = await page.fetch(interaction, { method: 'POST', headers: { origin, 'content-type': 'application/x-www-form-urlencoded' },
             body: new URLSearchParams({ csrf, apiToken: keys.A, decision: 'deny' }) });
-        const callback = await ipv6Callback(page, response, flow);
+        const callback = await applicationCallback(page, response, flow);
         assert.equal(callback.searchParams.get('error'), 'access_denied');
         assert.equal(callback.searchParams.get('code'), null);
         assert.deepEqual([verifiedKeys.length, authorizations.length, grantWrites.size], before);
@@ -365,6 +369,89 @@ test('automatic Remote onboarding uses public OAuth clients and independent per-
         assert(response.status >= 400 && response.status < 500);
         assert.equal(response.headers.get('location'), null, 'unregistered IPv6 callbacks cannot redirect or reach consent');
         noKey(await response.text());
+        assert.deepEqual([verifiedKeys.length, authorizations.length, grantWrites.size], before);
+    });
+    const cursorNative = 'cursor://anysphere.cursor-mcp/oauth/callback?fixed=one%20two&other=%22%3C%3E%26';
+    await t.test('explicit fragment code responses retain the IPv6 return bridge and work for HTTPS and Cursor', async () => {
+        const redirects = [ipv6Redirect, 'https://www.cursor.com/agents/mcp/oauth/callback?fixed=preserved', cursorNative];
+        const registered = await register({ ...publicClient('Fragment'), redirect_uris: redirects });
+        assert.equal(registered.status, 201, registered.payload.error);
+        for (const redirect of redirects) {
+            const flow = await authorize(registered.payload, keys.A, { redirect_uri: redirect, response_mode: 'fragment' });
+            const issued = await exchange(flow);
+            assert.equal(issued.status, 200, issued.payload.error);
+            assert(issued.payload.access_token && issued.payload.refresh_token);
+        }
+    });
+    await t.test('Cursor dual and triple callback registrations complete each selected callback with PKCE, refresh and revocation', async () => {
+        const web = 'https://www.cursor.com/agents/mcp/oauth/callback?fixed=one%20two&other=%22%3C%3E%26';
+        const local = 'http://localhost:8787/callback?fixed=one%20two&other=%22%3C%3E%26';
+        for (const redirects of [[web, local], [cursorNative, web, local]]) {
+            const registered = await register({ ...publicClient('Cursor'), redirect_uris: redirects });
+            assert.equal(registered.status, 201, registered.payload.error);
+            const client = registered.payload;
+            assert.deepEqual(client.redirect_uris, redirects);
+            for (const redirect of redirects) {
+                const before = [verifiedKeys.length, authorizations.length, grantWrites.size];
+                const flow = await authorize(client, keys.A, { redirect_uri: redirect });
+                assert.equal(flow.redirect, redirect, 'the selected callback, not the first registered one, is exchanged');
+                assert.deepEqual([verifiedKeys.length, authorizations.length, grantWrites.size], before.map(value => value + 1));
+                const beforeReplay = [verifiedKeys.length, authorizations.length, grantWrites.size];
+                const replay = await flow.page.fetch(flow.interaction, { method: 'POST', headers: { origin, 'content-type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({ csrf: flow.csrf, apiToken: keys.A, decision: 'allow' }) });
+                assert.equal(replay.status, 400); noKey(await replay.text());
+                assert.deepEqual([verifiedKeys.length, authorizations.length, grantWrites.size], beforeReplay, 'the consumed form cannot verify or store credentials again');
+                const issued = await exchange(flow); assert.equal(issued.status, 200, issued.payload.error);
+                assert(issued.payload.access_token && issued.payload.refresh_token);
+                const refreshed = await refresh(client, issued.payload.refresh_token);
+                assert.equal(refreshed.status, 200, refreshed.payload.error);
+                assert.notEqual(refreshed.payload.refresh_token, issued.payload.refresh_token);
+                assert.equal((await protectedRequest({ authorization: `Bearer ${refreshed.payload.access_token}` })).status, 200);
+                const revoked = await fetch(metadata.revocation_endpoint, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({ client_id: client.client_id, token: refreshed.payload.refresh_token, token_type_hint: 'refresh_token' }) });
+                await revoked.arrayBuffer(); assert.equal(revoked.status, 200);
+                assert.equal((await protectedRequest({ authorization: `Bearer ${refreshed.payload.access_token}` })).status, 401);
+                assert.equal((await exchange(flow)).status, 400, 'the returned authorization code remains single-use');
+                const page = browser(), deniedFlow = authorizationUrl(client, { redirect_uri: redirect });
+                let response = await page.fetch(deniedFlow.url);
+                const interaction = new URL(response.headers.get('location'), origin);
+                assert.equal(interaction.origin, origin);
+                response = await page.fetch(interaction);
+                const html = await response.text(); noKey(html);
+                const csrf = /name="csrf" value="([^"]+)"/.exec(html)?.[1]; assert(csrf);
+                const beforeDenial = [verifiedKeys.length, authorizations.length, grantWrites.size];
+                response = await page.fetch(interaction, { method: 'POST', headers: { origin, 'content-type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({ csrf, decision: 'deny', apiToken: keys.A }) });
+                const callback = await applicationCallback(page, response, deniedFlow);
+                assert.equal(callback.searchParams.get('error'), 'access_denied');
+                assert.equal(callback.searchParams.get('code'), null);
+                for (const [name, value] of new URL(redirect).searchParams) assert.equal(callback.searchParams.get(name), value);
+                assert.deepEqual([verifiedKeys.length, authorizations.length, grantWrites.size], beforeDenial);
+            }
+        }
+    });
+    await t.test('Cursor compatibility does not accept other schemes, endpoints, malformed URIs or native form_post', async () => {
+        const before = [verifiedKeys.length, authorizations.length, grantWrites.size];
+        for (const redirect of ['javascript:alert(1)', 'data:text/html,example', 'vscode://anysphere.cursor-mcp/oauth/callback',
+            'cursor://attacker.example/oauth/callback', 'cursor://anysphere.cursor-mcp/oauth/other',
+            'cursor://anysphere.cursor-mcp:1234/oauth/callback', 'cursor://user@anysphere.cursor-mcp/oauth/callback',
+            'cursor://anysphere.cursor-mcp/oauth/callback#fragment', 'cursor://anysphere.cursor-mcp/oauth/callback\n']) {
+            const result = await register({ ...publicClient('Invalid'), redirect_uris: [redirect] });
+            assert.equal(result.status, 400); assert.equal(result.payload.error, 'invalid_client_metadata');
+        }
+        const web = await register({ ...publicClient('Web'), application_type: 'web', redirect_uris: [cursorNative] });
+        assert.equal(web.status, 400);
+        const registered = await register({ ...publicClient('Cursor'), redirect_uris: [cursorNative] });
+        assert.equal(registered.status, 201);
+        for (const parameters of [{ response_mode: 'form_post' }, { response_mode: 'form_post', prompt: 'none' }]) {
+            const response = await browser().fetch(authorizationUrl(registered.payload, parameters).url);
+            assert.equal(response.status, 400); assert.equal(response.headers.get('location'), null);
+            const html = await response.text(); noKey(html);
+            assert.match(html, /Unsupported callback mode/); assert.doesNotMatch(html, /<form\b|name="apiToken"/);
+        }
+        const invalid = await browser().fetch(authorizationUrl(registered.payload, { redirect_uri: 'cursor://anysphere.cursor-mcp/oauth/callback?fixed=changed' }).url);
+        assert.equal(invalid.status, 400); assert.equal(invalid.headers.get('location'), null);
+        noKey(await invalid.text());
         assert.deepEqual([verifiedKeys.length, authorizations.length, grantWrites.size], before);
     });
     await t.test('CIMD completes real provider consent, token and MCP with a synthetic HTTPS metadata transport', async () => {
@@ -491,15 +578,15 @@ test('automatic Remote onboarding uses public OAuth clients and independent per-
     await t.test('offline consent preserves explicit prompts, duplicate-parameter rejection and GET-only authorization', async () => {
         const before = [verifiedKeys.length, authorizations.length, grantWrites.size];
         const noPrompt = await fetch(authorizationUrl(clientA, { scope: 'crawl:use offline_access', prompt: 'none' }).url, { redirect: 'manual' });
-        const destination = new URL(noPrompt.headers.get('location'), origin);
+        const destination = await callbackFromResponse(noPrompt);
         assert.equal(destination.pathname, new URL(clientA.redirect_uris[0]).pathname);
         assert.equal(destination.searchParams.get('error'), 'login_required');
-        await noPrompt.arrayBuffer();
         const flow = authorizationUrl(clientA, { scope: 'crawl:use offline_access', prompt: 'consent' });
         for (const duplicate of ['scope=crawl%3Ause', 'prompt=none']) {
             const response = await fetch(`${flow.url}&${duplicate}`, { redirect: 'manual' });
             const next = response.headers.get('location'), text = await response.text();
             if (next) assert.equal(new URL(next, origin).searchParams.get('error'), 'invalid_request');
+            else if (response.status === 200) assert.equal((await callbackFromResponse({ status: response.status, headers: response.headers, body: text })).searchParams.get('error'), 'invalid_request');
             else assert.equal(JSON.parse(text).error, 'invalid_request');
         }
         const post = await fetch(metadata.authorization_endpoint, { method: 'POST',

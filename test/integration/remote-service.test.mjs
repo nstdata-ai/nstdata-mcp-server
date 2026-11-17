@@ -14,6 +14,7 @@ import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { isolatedRedis } from './redis-fixture.mjs';
 import { remoteCli } from '../helpers.mjs';
+import { callbackFromResponse } from '../callback-page.mjs';
 
 const executable = pathToFileURL(remoteCli);
 const { startRemoteService, loadRemoteTls } = await import(new URL('./remote-service.js', executable));
@@ -548,8 +549,12 @@ for (const tlsTermination of ['trusted CIDR', 'ingress']) for (const mcpPath of 
     options.mcpPath = mcpPath;
     if (tlsTermination === 'ingress') options.tlsTermination = 'ingress';
     else options.trustedProxyCidrs = ['127.0.0.1/32'];
-    options.clients[0].redirectUris = [origin + '/callback'];
-    service = await startRemoteService(options);
+    options.clients[0].redirectUris = ['http://localhost:8787/callback?fixed=preserved'];
+    const { parseRemoteConfig } = await import(new URL('./remote-config.js', executable));
+    const parsed = parseRemoteConfig({ ...options,
+        encryptionKeys: Object.fromEntries(Object.entries(options.encryptionKeys).map(([id, key]) => [id, key.toString('base64url')])),
+        fingerprintKey: options.fingerprintKey.toString('base64url') });
+    service = await startRemoteService(parsed);
     const headers = { host: new URL(origin).host };
     for (const endpoint of ['/health/live', '/health/ready']) {
         assert.equal((await request(backend + endpoint)).status, 200, 'load balancer IP Host is accepted only for health');
@@ -613,7 +618,8 @@ for (const tlsTermination of ['trusted CIDR', 'ingress']) for (const mcpPath of 
     const denied = await browser(metadata.authorization_endpoint + '?' + new URLSearchParams({ ...authorizationRequest, scope: 'openid crawl:use' }));
     assert.equal(denied.status, 303);
     const deniedDestination = new URL(denied.headers.location);
-    assert.equal(deniedDestination.origin + deniedDestination.pathname, options.clients[0].redirectUris[0]);
+    assert.equal(deniedDestination.origin + deniedDestination.pathname, 'http://localhost:8787/callback');
+    assert.equal(deniedDestination.searchParams.get('fixed'), 'preserved');
     assert.equal(deniedDestination.searchParams.get('error'), 'invalid_scope');
     assert.equal(deniedDestination.searchParams.get('iss'), metadata.issuer);
     assert.equal(deniedDestination.searchParams.get('state'), authorizationRequest.state);
@@ -629,13 +635,16 @@ for (const tlsTermination of ['trusted CIDR', 'ingress']) for (const mcpPath of 
         body: new URLSearchParams({ csrf, apiToken: syntheticKey, decision: 'allow' }).toString() });
     let code;
     for (let count = 0; count < 6; count++) {
-        assert([302, 303].includes(response.status));
-        const next = new URL(response.headers.location, origin); assert.equal(next.origin, origin);
-        if (next.pathname === '/callback') {
+        if (response.status === 200) {
+            const next = await callbackFromResponse(response);
+            assert.equal(next.origin + next.pathname, 'http://localhost:8787/callback');
+            assert.equal(next.searchParams.get('fixed'), 'preserved');
             assert.equal(next.searchParams.get('state'), authorizationRequest.state);
             assert.equal(next.searchParams.get('iss'), metadata.issuer);
             code = next.searchParams.get('code'); break;
         }
+        assert([302, 303].includes(response.status));
+        const next = new URL(response.headers.location, origin); assert.equal(next.origin, origin);
         response = await browser(next);
     }
     assert(code && secureCookies.length > 1 && userLookups === 1);

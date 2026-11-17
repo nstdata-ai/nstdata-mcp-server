@@ -50,7 +50,9 @@ Remote 是从本仓库构建的独立应用，不包含在本地 `@nstdata-ai/mc
 - Node.js 22 系列的 22.18+ 或 Node.js 24 LTS 系列的 24.11+，以及稳定的公网 HTTPS origin。证书可由现有网关统一管理，或由应用直接加载。
 - 采用持久化、`noeviction`、独立命名空间的单机 Redis，并授予 adapter 所需的键／Lua 权限。使用验证证书的 TLS（`rediss:`）或受保护的本地 Unix socket；不支持 Cluster、Sentinel。
 - 公共客户端使用 authorization code 和 S256 PKCE。服务支持 Client ID Metadata Documents（CIMD）及动态客户端注册（DCR），预登记 confidential 客户端为可选方式，不需要逐设备分发 client secret。
-- IPv6 回调通过浏览器返回页跳转，支持 query 响应。IPv6 回调与 `form_post` 的组合会在征求同意前被拒绝；请使用 query 响应，或改用 IPv4／HTTPS 域名回调。
+- query 授权响应先显示浏览器返回页，再前往本次选定的已注册回调，保留 code 或 error、state、issuer 及回调原有的固定 query 参数，也支持 HTTPS 回调继续跳往本地客户端。返回页不缓存、不发送 referrer；自动跳转被阻止时可点击继续链接。
+- 公共 native 客户端可注册 HTTPS 或 HTTP loopback 回调，以及指定的 Cursor 地址 `cursor://anysphere.cursor-mcp/oauth/callback`（可带 query 参数）；其他私有 scheme 会被拒绝。这是对 Cursor 的兼容例外，不符合 [RFC 8252](https://www.rfc-editor.org/rfc/rfc8252#section-7.1) 建议的反域名 scheme 命名；S256 PKCE 仍为必需，已注册名称或 scheme 不代表应用身份已获认证。打开 Cursor 可能需要浏览器或系统确认。
+- IPv6 和 Cursor native 回调支持 query 响应，`form_post` 会在征求同意前被拒绝。HTTP(S) 域名和 IPv4 回调继续支持 `form_post`。静态 confidential 客户端仍限于 HTTP(S)，包括 `http://localhost` 回调；issuer 和入口配置采用各自的校验规则。
 
 ## HTTPS 入口方式
 

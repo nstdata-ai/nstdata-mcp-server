@@ -75,6 +75,9 @@ test('provider validates fixed clients, key inputs and TTL policy before Redis',
         { clients: [{ ...options.clients[0], redirectUris: ['http://public.example.test/callback'] }] },
         { clients: [{ ...options.clients[0], redirectUris: ['https://example.test/*'] }] },
         { clients: [{ ...options.clients[0], redirectUris: ['https://example.test/callback#fragment'] }] },
+        { clients: [{ ...options.clients[0], redirectUris: ['cursor://anysphere.cursor-mcp/oauth/callback'] }] },
+        { issuerUrl: 'cursor://anysphere.cursor-mcp/oauth/callback' },
+        { resourceUrl: 'cursor://anysphere.cursor-mcp/oauth/callback' },
         { clients: [options.clients[0], options.clients[0]] },
     ]) assert.throws(() => createOAuthProvider({ ...options, ...change }), /^Error: Invalid OAuth provider configuration$/);
     assert.equal(commands.length, 0);
