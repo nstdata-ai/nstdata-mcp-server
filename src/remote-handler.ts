@@ -7,7 +7,7 @@ import { createOAuthHttpHandler } from './oauth-resource.js';
 import type { HttpHandlerOptions } from './http-handler.js';
 import { createRedisAdapterFactory } from './redis/provider-adapter.js';
 import { createRemoteRequestPolicy, mcpEndpointPath } from './remote-request.js';
-import { consentPageCsp, consentFormCsp, renderConsentError, renderConsentPage } from './consent-page.js';
+import { consentPageCsp, consentFormCsp, isCursorCallback, renderConsentError, renderConsentPage } from './consent-page.js';
 
 export interface RemoteHandlerOptions extends OAuthProviderOptions {
     trustedProxyCidrs?: readonly string[];
@@ -246,9 +246,10 @@ function configureRemoteHandler(options: RemoteHandlerOptions): RemoteHandler {
                     if (!resolved) {
                         consentError(response, 400, 'Invalid authorization request', 'Return to your application and connect again.'); return;
                     }
-                    const client = { id: clientId, name: resolved.name, callbackOrigin: new URL(redirectUri).origin };
-                    if (new URL(redirectUri).hostname.startsWith('[') && details.params.response_mode === 'form_post') {
-                        consentError(response, 400, 'Unsupported callback mode', 'Use a query response for an IPv6 callback, or configure an IPv4 or HTTPS hostname callback.'); return;
+                    const callback = new URL(redirectUri);
+                    const client = { id: clientId, name: resolved.name, callbackOrigin: isCursorCallback(callback) ? redirectUri : callback.origin };
+                    if ((callback.hostname.startsWith('[') || isCursorCallback(callback)) && details.params.response_mode === 'form_post') {
+                        consentError(response, 400, 'Unsupported callback mode', 'Use a query response for this callback, or configure an IPv4 or HTTPS hostname callback.'); return;
                     }
                     if (request.method === 'GET') { await page(response, uid, client); return; }
                     if (origin !== issuer.origin || !/^application\/x-www-form-urlencoded(?:\s*;\s*charset=utf-8)?$/i.test(request.headers['content-type'] ?? '')) {

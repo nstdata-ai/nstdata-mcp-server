@@ -7,7 +7,7 @@ import type { OAuthHttpHandlerOptions } from './oauth-resource.js';
 import { createRedisAdapterFactory } from './redis/provider-adapter.js';
 import { type CredentialBinding, type RedisCredentialStore } from './redis/credential-store.js';
 import { RedisStoreError, type StoreOptions, validateStoreOptions } from './redis/shared.js';
-import { consentPageCsp, renderCallbackPage, renderConsentError } from './consent-page.js';
+import { consentPageCsp, isCursorCallback, renderCallbackPage, renderConsentError } from './consent-page.js';
 
 export interface OAuthFixedClient {
     clientId: string;
@@ -147,7 +147,12 @@ return n
             (metadata.client_name !== undefined && (typeof metadata.client_name !== 'string' || metadata.client_name.length > 100 || /[\x00-\x1f\x7f]/.test(metadata.client_name)))) {
             throw new errors.InvalidClientMetadata('Unsupported client configuration');
         }
-        try { for (const uri of redirects) configuredUrl(uri, true); }
+        try { for (const uri of redirects) {
+            const url = new URL(uri);
+            // Cursor uses a non-reverse-domain scheme. Do not generalize this exception to other private schemes or web clients.
+            if (metadata.application_type === 'native' && isCursorCallback(url) && url.href === uri && !uri.includes('#') && !uri.includes('*')) continue;
+            configuredUrl(uri, true);
+        } }
         catch { throw new errors.InvalidClientMetadata('Unsupported redirect URI'); }
     }
     const requestSignals = new AsyncLocalStorage<AbortSignal>();
@@ -261,24 +266,34 @@ return n
         if (typeof redirect === 'string' && client?.redirectUriAllowed(redirect)) {
             const callbackUrl = new URL(redirect);
             const policy = ctx.response.get('Content-Security-Policy');
-            if (callbackUrl.hostname.startsWith('[')) {
+            if (callbackUrl.hostname.startsWith('[') || isCursorCallback(callbackUrl)) {
                 if (params?.response_mode === 'form_post') {
                     ctx.remove('Location'); ctx.remove('Content-Length');
                     ctx.status = 400; ctx.type = 'html';
                     ctx.set('Content-Security-Policy', consentPageCsp);
                     ctx.body = renderConsentError({ title: 'Unsupported callback mode',
-                        message: 'Use a query response for an IPv6 callback, or configure an IPv4 or HTTPS hostname callback.' });
+                        message: 'Use a query response for this callback, or configure an IPv4 or HTTPS hostname callback.' });
                     return;
                 }
-                const location = ctx.response.get('Location');
-                const destination = location ? new URL(location, issuer) : undefined;
-                if ([302, 303].includes(ctx.status) && destination?.origin === callbackUrl.origin && destination.pathname === callbackUrl.pathname) {
-                    ctx.remove('Location'); ctx.remove('Content-Length');
-                    ctx.status = 200; ctx.type = 'html';
-                    ctx.set('Content-Security-Policy', consentPageCsp);
-                    ctx.body = renderCallbackPage(destination.href);
-                }
-            } else if (policy) ctx.set('Content-Security-Policy', policy.replace(/form-action[^;]*/, `form-action 'self' ${callbackUrl.origin}`));
+            }
+            const location = ctx.response.get('Location');
+            const destination = location ? new URL(location, issuer) : undefined;
+            // Compare the entire selected callback, including its stable query. Only provider response fields may differ.
+            const responseFields = ['code', 'state', 'iss', 'error', 'error_description', 'error_uri'];
+            const base = new URL(callbackUrl), target = destination && new URL(destination);
+            for (const field of responseFields) { base.searchParams.delete(field); target?.searchParams.delete(field); }
+            const response = params?.response_mode === 'fragment' ? new URLSearchParams(destination?.hash.slice(1)) : destination?.searchParams;
+            if (target && params?.response_mode === 'fragment') target.hash = '';
+            if (destination && target && [302, 303].includes(ctx.status) && params?.response_mode !== 'form_post' &&
+                (response?.has('code') || response?.has('error')) && target.href === base.href) {
+                ctx.remove('Location'); ctx.remove('Content-Length');
+                ctx.status = 200; ctx.type = 'html';
+                ctx.set('Content-Security-Policy', consentPageCsp);
+                ctx.set('Cache-Control', 'no-store'); ctx.set('Referrer-Policy', 'no-referrer');
+                ctx.body = renderCallbackPage(destination.href);
+            } else if (policy && !callbackUrl.hostname.startsWith('[') && !isCursorCallback(callbackUrl)) {
+                ctx.set('Content-Security-Policy', policy.replace(/form-action[^;]*/, `form-action 'self' ${callbackUrl.origin}`));
+            }
         }
         // Keep discovery aligned with the OAuth resource rather than unused OpenID internals.
         if (ctx.status === 200 && ctx.path === '/.well-known/openid-configuration' && ctx.body && typeof ctx.body === 'object') {

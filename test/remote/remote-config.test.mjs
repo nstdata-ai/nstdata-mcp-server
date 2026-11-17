@@ -129,12 +129,14 @@ test('Remote Redis configuration rejects network downgrade, ambiguous endpoints 
 });
 
 test('Remote fixed clients and callback URLs cannot introduce unregistered or malformed values', () => {
+    const localhost = fixture(); localhost.clients[0].redirectUris = ['http://localhost:8787/callback?fixed=preserved'];
+    assert.deepEqual(parseRemoteConfig(localhost).clients[0].redirectUris, localhost.clients[0].redirectUris);
     invalid(input => { input.clients.push(structuredClone(input.clients[0])); });
     invalid(input => { input.clients[0].redirectUris.push(input.clients[0].redirectUris[0]); });
     invalid(input => { input.clients[0].clientSecret = 'too-short'; });
     invalid(input => { input.clients[0].clientId = 'bad id'; });
     invalid(input => { input.clients[0].name = '   '; });
-    for (const uri of ['http://client.example.test/callback', 'https://client.example.test/callback#fragment',
+    for (const uri of ['http://client.example.test/callback', 'cursor://anysphere.cursor-mcp/oauth/callback', 'https://client.example.test/callback#fragment',
         'https://user:synthetic-password@client.example.test/callback', 'https://client.example.test/*', 'https://client.example.test/callback\n']) invalid(input => { input.clients[0].redirectUris = [uri]; });
 });
 

@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { isolatedRedis } from './redis-fixture.mjs';
 import { remoteCli } from '../helpers.mjs';
+import { callbackFromResponse } from '../callback-page.mjs';
 
 const executable = pathToFileURL(remoteCli);
 const upstream = 'https://remote-integration.invalid';
@@ -122,8 +123,12 @@ for (const mcpPath of ['/mcp', '/crawl']) test(`actual Remote consent, OAuth and
         let internalAutoForms = 0;
         let response = await submit(flow, { apiToken: keys[label] });
         for (let budget = 0; budget < 6; budget++) {
+            let next;
             if (response.status === 200) {
                 const html = await response.text(), action = /<form[^>]+action="([^"]+)"/.exec(html)?.[1], script = /<script>([\s\S]*?)<\/script>/.exec(html)?.[1]; noKey(html);
+                if (html.includes('<meta http-equiv="refresh"')) {
+                    next = await callbackFromResponse({ status: response.status, headers: response.headers, body: html });
+                } else {
                 const next = new URL(action, flow.origin), policy = response.headers.get('content-security-policy') ?? '';
                 assert.equal(response.headers.get('referrer-policy'), 'same-origin', 'provider account-switch form POSTs need the same policy');
                 assert(next.origin === flow.origin && next.pathname === '/session/end/confirm' && script);
@@ -133,9 +138,13 @@ for (const mcpPath of ['/mcp', '/crawl']) test(`actual Remote consent, OAuth and
                 const fields = new URLSearchParams([...html.matchAll(/<input[^>]*name="([^"]+)"[^>]*value="([^"]*)"/g)].map(match => [match[1], match[2]]));
                 assert(fields.size === 2 && fields.get('xsrf') && fields.get('logout') === 'yes');
                 response = await flow.page.fetch(next, { method: 'POST', headers: { origin: flow.origin, 'content-type': 'application/x-www-form-urlencoded' }, body: fields }); internalAutoForms++; continue;
+                }
+            } else {
+                assert(response.status === 303 || response.status === 302);
+                next = new URL(response.headers.get('location'), flow.origin); noKey(next);
+                assert.notEqual(next.pathname, new URL(flow.client.redirectUris[0]).pathname, 'query responses must use the browser return page');
+                assert.equal(next.origin, flow.origin);
             }
-            assert(response.status === 303 || response.status === 302);
-            const next = new URL(response.headers.get('location'), flow.origin); noKey(next);
             if (next.pathname === new URL(flow.client.redirectUris[0]).pathname) {
                 assert(next.searchParams.get('state') === flow.state && next.searchParams.get('iss') === flow.origin);
                 const tokenResponse = await fetch(flow.metadata.token_endpoint, { method: 'POST', headers: { authorization: 'Basic ' + Buffer.from(`${flow.client.clientId}:${flow.client.clientSecret}`).toString('base64'), 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'authorization_code', code: next.searchParams.get('code'), code_verifier: flow.verifier, redirect_uri: flow.client.redirectUris[0], resource: flow.resource }) });
@@ -213,6 +222,11 @@ for (const mcpPath of ['/mcp', '/crawl']) test(`actual Remote consent, OAuth and
     await t.test('unsupported OAuth scope is denied before key validation or authorization writes', async () => {
         const before = snapshot(), page = browser(), response = await page.fetch(`${metadata.authorization_endpoint}?${new URLSearchParams({ client_id: clients[0].clientId, redirect_uri: clients[0].redirectUris[0], response_type: 'code', scope: 'proxy:use', resource, state: 'unsupported-scope', code_challenge_method: 'S256', code_challenge: createHash('sha256').update(randomBytes(32)).digest('base64url') })}`);
         const location = response.headers.get('location'), body = await response.text(); noKey(body); noKey(location);
+        if (response.status === 200) {
+            const next = await callbackFromResponse({ status: response.status, headers: response.headers, body });
+            assert.equal(next.searchParams.get('error'), 'invalid_scope');
+            assert.deepEqual(snapshot(), before); return;
+        }
         const next = location ? new URL(location, origin) : undefined;
         if (next?.pathname.startsWith('/oauth/interaction/')) {
             assert.equal(next.origin, origin);
@@ -254,8 +268,8 @@ for (const mcpPath of ['/mcp', '/crawl']) test(`actual Remote consent, OAuth and
         assert.equal(replay.status, 403); assert.deepEqual(snapshot(), beforeReplay);
         const cancelled = await begin(), beforeCancel = snapshot(), response = await submit(cancelled, { decision: 'deny', apiToken: '' });
         const resumed = await cancelled.page.fetch(new URL(response.headers.get('location'), origin));
-        assert(new URL(resumed.headers.get('location'), origin).searchParams.get('error') === 'access_denied');
-        await resumed.arrayBuffer(); assert.deepEqual(snapshot(), beforeCancel);
+        assert.equal((await callbackFromResponse(resumed, noKey)).searchParams.get('error'), 'access_denied');
+        assert.deepEqual(snapshot(), beforeCancel);
     });
     await t.test('concurrent duplicate consent validates and creates exactly one binding and Grant', async () => {
         const flow = await begin(), before = snapshot(), responses = await Promise.all([submit(flow), submit(flow)]);

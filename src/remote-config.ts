@@ -70,9 +70,9 @@ const configuration = z.strictObject({
     allowedOrigins: z.array(z.string().min(1).max(8192)).max(32).default([]),
 });
 
-function webUrl(value: string, originOnly: boolean): URL {
+function webUrl(value: string, originOnly: boolean, callback = false): URL {
     const url = new URL(value);
-    const loopback = ['127.0.0.1', '[::1]'].includes(url.hostname);
+    const loopback = ['127.0.0.1', '[::1]'].includes(url.hostname) || (callback && url.hostname === 'localhost');
     if ((url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) || url.username || url.password ||
         value.includes('#') || value.includes('*') || (url.href !== value && value !== url.origin) ||
         (originOnly && (url.pathname !== '/' || value.includes('?')))) throw new Error();
@@ -146,7 +146,7 @@ export function parseRemoteConfig(value: unknown): RemoteServiceConfig {
         for (const client of parsed.clients) {
             if (ids.has(client.clientId) || new Set(client.redirectUris).size !== client.redirectUris.length) throw new Error();
             ids.add(client.clientId);
-            for (const uri of client.redirectUris) webUrl(uri, false);
+            for (const uri of client.redirectUris) webUrl(uri, false, true);
         }
         if (new Set(parsed.allowedOrigins).size !== parsed.allowedOrigins.length) throw new Error();
         for (const origin of parsed.allowedOrigins) if (webUrl(origin, true).origin !== origin) throw new Error();

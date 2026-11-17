@@ -6,6 +6,8 @@ Use Nstdata Crawl and HTTP/HTTPS proxies from an MCP client.
 
 Use [Remote MCP](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/docs/remote.md) at `https://mcp.nstdata.io/crawl` for hosted Crawl with OAuth; no local Node.js or `npx` is required. The local stdio setup below provides Crawl and HTTP/HTTPS Proxy tools.
 
+For self-hosting, see the Remote guide's callback requirements, including browser return pages and the supported Cursor native callback.
+
 ## Connect
 
 Local stdio requires Node.js 22 (22.18 or later) or 24, with `npx` on PATH. Get a Crawl API key from the [Nstdata dashboard](https://app.nstdata.io/). Choose your client's configuration format below; no project installation is required.

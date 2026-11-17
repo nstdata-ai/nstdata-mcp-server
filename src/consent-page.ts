@@ -41,9 +41,16 @@ button:hover{background:#f5f6f9;border-color:#a7acbb}
 
 export const consentPageCsp = `default-src 'none'; style-src 'sha256-${createHash('sha256').update(css).digest('base64')}'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`;
 
+/** Bounded compatibility exception for Cursor's native OAuth callback, including stable query parameters. */
+export function isCursorCallback(callback: URL): boolean {
+    return callback.protocol === 'cursor:' && callback.host === 'anysphere.cursor-mcp' &&
+        callback.pathname === '/oauth/callback' && !callback.username && !callback.password && !callback.hash;
+}
+
 /** Native form redirects must allow the current, client-validated callback origin. */
 export function consentFormCsp(callbackUri: string): string {
     const callback = new URL(callbackUri);
+    if (isCursorCallback(callback)) return consentPageCsp;
     if (callback.protocol !== 'https:' && callback.protocol !== 'http:') throw new Error('Invalid callback origin');
     // Browsers cannot represent IPv6 literals as CSP host sources; use the return page instead.
     if (callback.hostname.startsWith('[')) return consentPageCsp;
@@ -112,10 +119,12 @@ export function renderConsentError({ title, message }: { title: string; message:
 </div>`);
 }
 
-/** End the form redirect chain before navigating to a validated IPv6 callback. */
+/** End the form redirect chain before navigating to the validated application callback. */
 export function renderCallbackPage(callbackUri: string): string {
     const callback = new URL(callbackUri);
-    if (!['http:', 'https:'].includes(callback.protocol) || callback.username || callback.password) throw new Error('Invalid callback URL');
+    const endpoint = new URL(callback); endpoint.hash = '';
+    if ((!['http:', 'https:'].includes(callback.protocol) && !isCursorCallback(endpoint)) ||
+        callback.username || callback.password) throw new Error('Invalid callback URL');
     return frame('Return to your application', `<h1 id="page-title">Return to your application</h1>
 <p class="intro">If you are not redirected, <a href="${escape(callback.href)}">continue to your application</a>.</p>`, callback.href);
 }

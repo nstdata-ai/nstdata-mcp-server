@@ -20,7 +20,9 @@
 - Align OAuth discovery with permitted Crawl scopes and advertise issuer identification for authorization responses.
 - Fix browser consent submissions and provide a responsive authorization screen with clear error and recovery messages.
 - Allow consent and account-switch forms to return to the registered client callback origin without broadening other browser permissions.
-- Return to IPv6 callbacks through a browser navigation page; reject IPv6 `form_post` before consent instead of consuming an authorization that cannot return.
+- End query authorization responses with a browser navigation page so registered HTTPS callbacks can redirect onward to local clients without inheriting consent form restrictions; preserve callback queries, state and issuer on success and cancellation.
+- Support the specific Cursor native OAuth callback for public clients alongside HTTPS and loopback callbacks; keep other private schemes and static confidential native callbacks rejected. Reject IPv6 and native `form_post` before consent.
+- Accept HTTP localhost callbacks consistently in static client configuration and the authorization provider, without changing issuer or ingress validation.
 - Keep idle Redis connections active with bounded heartbeats and identify service failures without exposing connection details.
 
 ## 1.0.5
