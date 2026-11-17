@@ -126,7 +126,20 @@ test('bilingual client setup preserves the pinned command, credential mapping an
         fs.readFileSync(new URL('../' + file, import.meta.url), 'utf8'));
     const toml = text => [...text.matchAll(/```toml\n([\s\S]*?)```/g)].map(block => block[1]);
     assert.deepEqual(toml(readmes[0]), toml(readmes[1]));
-    assert.equal(toml(readmes[0]).length, 1);
+    assert.equal(toml(readmes[0]).length, 3);
+    for (const text of readmes) {
+        const configurations = [...text.matchAll(/```json\n([\s\S]*?)```/g)].map(block => JSON.parse(block[1]));
+        assert.deepEqual(configurations[0].mcpServers.nstdata, { url: 'https://mcp.nstdata.io/crawl' });
+        assert.deepEqual(configurations[1].mcpServers['nstdata-key'], {
+            url: 'https://mcp.nstdata.io/crawl', headers: { 'X-API-Key': 'YOUR_NSTDATA_API_KEY' },
+        });
+        for (const [index, name, mode] of [[2, 'nstdata-local', 'crawl'], [3, 'nstdata-proxy', 'proxy']]) {
+            const server = configurations[index].mcpServers[name];
+            assert.equal(server.command, 'npx');
+            assert.deepEqual(server.args, ['--yes', `@nstdata-ai/mcp-server@${version}`]);
+            assert.equal(server.env.NSTDATA_MODULES, mode);
+        }
+    }
     const references = ['docs/mcp.md', 'docs/mcp_zh.md'].map(file =>
         fs.readFileSync(new URL('../' + file, import.meta.url), 'utf8'));
     assert.deepEqual(clientConfigurations(references[0]), clientConfigurations(references[1]));
