@@ -7,7 +7,7 @@ import { isIP, type AddressInfo, type Socket } from 'node:net';
 import { isAbsolute } from 'node:path';
 import { createSecureContext } from 'node:tls';
 import { createClient } from '@redis/client';
-import type { RemoteServiceConfig } from './remote-config.js';
+import { normalizeRemoteOAuthPolicy, type RemoteServiceConfig } from './remote-config.js';
 import { createApiKeyVerifier } from './api-key-verifier.js';
 import { createRemoteHandler, type RemoteHandler } from './remote-handler.js';
 import { createRemoteRequestPolicy, mcpEndpointPath } from './remote-request.js';
@@ -135,7 +135,8 @@ export async function startRemoteService(input: RemoteServiceConfig): Promise<Re
     }
 
     try {
-        const config = structuredClone(input);
+        const snapshot = structuredClone(input);
+        const config = { ...snapshot, oauth: normalizeRemoteOAuthPolicy(snapshot.oauth) };
         const issuer = new URL(config.issuerUrl);
         const resourceUrl = new URL(mcpEndpointPath(config.mcpPath), issuer).href;
         if (config.issuerUrl !== issuer.origin || !isIP(config.listen.host) ||
@@ -178,11 +179,14 @@ export async function startRemoteService(input: RemoteServiceConfig): Promise<Re
             }, heartbeatIntervalMs);
             heartbeatTimer.unref();
         };
-        const store = { command, namespace: config.redis.namespace, maxTtlSeconds: 2_592_000 };
+        const store = { command, namespace: config.redis.namespace, maxTtlSeconds: 31_536_000 };
         const credentials = createRedisCredentialStore({ ...store, encryptionKeys: config.encryptionKeys,
             currentKeyId: config.currentKeyId, fingerprintKey: config.fingerprintKey });
         handler = createRemoteHandler({ issuerUrl: config.issuerUrl, resourceUrl,
             clients: config.clients, cookieKeys: config.cookieKeys, jwks: config.jwks, store, credentials,
+            ttl: { AccessToken: config.oauth.accessTokenSeconds, RefreshToken: config.oauth.refreshTokenIdleSeconds,
+                Grant: config.oauth.grantSeconds, Interaction: config.oauth.interactionSeconds, AuthorizationCode: config.oauth.authorizationCodeSeconds },
+            rotationOverlapSeconds: config.oauth.rotationOverlapSeconds,
             verifyApiKey: createApiKeyVerifier(), apiKeyIdentityKey: config.fingerprintKey,
             allowedOrigins: config.allowedOrigins, trustedProxyCidrs: config.trustedProxyCidrs,
             tlsTermination: config.tlsTermination });

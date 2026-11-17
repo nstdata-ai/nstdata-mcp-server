@@ -7,8 +7,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-const sources = ['api-key-auth', 'api-key-verifier', 'client-metadata', 'config', 'consent-page', 'http-handler', 'modules/crawl-result', 'modules/crawl-schema',
-    'modules/crawl', 'modules/proxy', 'oauth-provider', 'oauth-resource', 'redis/credential-store',
+const sources = ['api-key-auth', 'api-key-verifier', 'client-metadata', 'config', 'consent-page', 'authorization-page', 'http-handler', 'modules/crawl-result', 'modules/crawl-schema',
+    'modules/crawl', 'modules/proxy', 'oauth-provider', 'oauth-refresh-overlap', 'oauth-resource', 'redis/credential-store',
     'redis/provider-adapter', 'redis/shared', 'remote-config', 'remote-handler', 'remote-request', 'remote-service', 'remote',
     'server', 'shared/errors', 'shared/output'];
 const artifactFiles = ['package.json', 'package-lock.json', 'docs/remote.md', 'docs/remote_zh.md',

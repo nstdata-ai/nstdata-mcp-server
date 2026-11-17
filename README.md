@@ -392,7 +392,7 @@ npx --yes @nstdata-ai/mcp-server --version
 
 - [Crawl API and SDK usage](https://docs.nstdata.io/docs/crawl?utm_source=github&utm_medium=social&utm_campaign=mcp&utm_content=readme)
 - [MCP clients, tool inputs, and limits](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/docs/mcp.md)
-- [Hosted MCP and self-hosting](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/docs/remote.md) — running the local npm package does not deploy this remote application.
+- [Hosted MCP and self-hosting](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/docs/remote.md) — running the local npm package does not deploy this remote application. Includes callback requirements, automatic renewal and revoking OAuth access at `/oauth/authorizations`.
 - [Nstdata Agent Skills](https://github.com/nstdata-ai/nstdata-skills) — workflow guidance using an existing MCP connection.
 - [Contributing](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/CONTRIBUTING.md) · [Changelog](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/CHANGELOG.md) · [Security](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/SECURITY.md) · [MIT license](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/LICENSE)
 

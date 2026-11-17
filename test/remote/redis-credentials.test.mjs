@@ -209,3 +209,15 @@ test('malformed stored hashes and invalid credentials fail with redacted errors'
         await assert.rejects(store.authorize(token), error => redacted(error, f.token));
     }
 });
+
+test('management lookup verifies the sealed exact key without writing or extending authorization', async () => {
+    const f = await issueFixture(), commands = [];
+    const store = createRedisCredentialStore({ ...f.options, command: async args => { commands.push(args); return f.read(args); } });
+    assert.deepEqual(await store.findBinding(f.token), f.binding);
+    assert.equal(await store.findBinding('synthetic-unknown-business-key'), null);
+    assert(commands.every(args => ['GET', 'HGETALL'].includes(args[0])));
+    const envelope = JSON.parse(f.fields.sealed);
+    envelope.tag = randomBytes(16).toString('base64url'); f.fields.sealed = JSON.stringify(envelope);
+    await assert.rejects(store.findBinding(f.token), error => redacted(error, f.token));
+    assert(commands.every(args => ['GET', 'HGETALL'].includes(args[0])));
+});

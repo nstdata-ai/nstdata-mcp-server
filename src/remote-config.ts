@@ -22,6 +22,7 @@ export interface RemoteServiceConfig {
     currentKeyId: string;
     fingerprintKey: Uint8Array;
     allowedOrigins: string[];
+    oauth?: Partial<RemoteOAuthPolicy>;
 }
 
 export class RemoteConfigurationError extends Error {
@@ -49,6 +50,24 @@ const jwk = z.strictObject({
     p: jwkField.optional(), q: jwkField.optional(), dp: jwkField.optional(), dq: jwkField.optional(), qi: jwkField.optional(),
     crv: jwkField.optional(), x: jwkField.optional(), y: jwkField.optional(),
 });
+const oauthPolicy = z.strictObject({
+    accessTokenSeconds: z.number().int().min(60).max(2_592_000).default(604_800),
+    refreshTokenIdleSeconds: z.number().int().min(300).max(31_536_000).default(15_552_000),
+    grantSeconds: z.number().int().min(3600).max(31_536_000).default(31_536_000),
+    interactionSeconds: z.number().int().min(60).max(3600).default(1800),
+    authorizationCodeSeconds: z.number().int().min(30).max(300).default(120),
+    rotationOverlapSeconds: z.number().int().min(0).max(10).default(5),
+}).prefault({}).refine(value => value.accessTokenSeconds <= value.grantSeconds && value.refreshTokenIdleSeconds <= value.grantSeconds);
+
+export type RemoteOAuthPolicy = z.output<typeof oauthPolicy>;
+export type ResolvedRemoteServiceConfig = Omit<RemoteServiceConfig, 'oauth'> & { oauth: RemoteOAuthPolicy };
+
+/** Shared policy normalization for protected files and existing programmatic service callers. */
+export function normalizeRemoteOAuthPolicy(value: unknown): RemoteOAuthPolicy {
+    try { return oauthPolicy.parse(value); }
+    catch { throw new RemoteConfigurationError(); }
+}
+
 const configuration = z.strictObject({
     issuerUrl: z.string().min(1).max(8192),
     mcpPath: z.string().default('/mcp'),
@@ -68,6 +87,7 @@ const configuration = z.strictObject({
     currentKeyId: keyId,
     fingerprintKey: base64Key,
     allowedOrigins: z.array(z.string().min(1).max(8192)).max(32).default([]),
+    oauth: z.unknown().optional(),
 });
 
 function webUrl(value: string, originOnly: boolean, callback = false): URL {
@@ -120,9 +140,10 @@ function checkSigningKey(value: z.infer<typeof jwk>): void {
 }
 
 /** Parse deployment-owned configuration without opening sockets or reading credential environment variables. */
-export function parseRemoteConfig(value: unknown): RemoteServiceConfig {
+export function parseRemoteConfig(value: unknown): ResolvedRemoteServiceConfig {
     try {
         const parsed = configuration.parse(value);
+        const oauth = normalizeRemoteOAuthPolicy(parsed.oauth);
         const issuer = webUrl(parsed.issuerUrl, true);
         mcpEndpointPath(parsed.mcpPath);
         trustedProxyPeers(parsed.trustedProxyCidrs);
@@ -162,12 +183,12 @@ export function parseRemoteConfig(value: unknown): RemoteServiceConfig {
             if (bytes.equals(fingerprintKey)) throw new Error();
             return [id, bytes];
         }));
-        return { ...parsed, issuerUrl: issuer.origin, encryptionKeys, fingerprintKey };
+        return { ...parsed, oauth, issuerUrl: issuer.origin, encryptionKeys, fingerprintKey };
     } catch { throw new RemoteConfigurationError(); }
 }
 
 /** Mounted symlink secrets are allowed; permissions and size are checked on the opened regular file. */
-export async function loadRemoteConfig(filename: string): Promise<RemoteServiceConfig> {
+export async function loadRemoteConfig(filename: string): Promise<ResolvedRemoteServiceConfig> {
     let file: Awaited<ReturnType<typeof open>> | undefined;
     try {
         if (typeof filename !== 'string' || !isAbsolute(filename) || filename.includes('\0') || filename.length > 4096) throw new Error();
