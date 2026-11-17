@@ -3,7 +3,7 @@
     "nstdata": {
       "type": "stdio",
       "command": "npx",
-      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.3"],
+      "args": ["--yes", "@nstdata-ai/mcp-server@1.0.5"],
       "env_vars": [
         "NSTDATA_API_TOKEN",
         "NSTDATA_MODULES",

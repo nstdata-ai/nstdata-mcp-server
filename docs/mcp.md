@@ -190,7 +190,7 @@ gemini extensions update nstdata
 gemini extensions uninstall nstdata
 ```
 
-The extension pins MCP `1.0.3`; changing npm `latest` alone does not update it. Uninstalling may retain credentials managed by Gemini CLI. Revoking the Key in the [Nstdata dashboard](https://app.nstdata.io/) also blocks other apps sharing that Key.
+The extension pins MCP `1.0.5`; changing npm `latest` alone does not update it. Uninstalling may retain credentials managed by Gemini CLI. Revoking the Key in the [Nstdata dashboard](https://app.nstdata.io/) also blocks other apps sharing that Key.
 
 ## Configuration
 
