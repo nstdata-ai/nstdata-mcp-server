@@ -9,7 +9,7 @@
 
 ### Client distribution
 
-- Pin Cursor, Codex and Claude Code plugins to the 1.0.3 stdio package.
+- Pin Cursor, Codex and Claude Code plugins to the 1.0.5 stdio package.
 - Add a Gemini CLI Crawl extension with client-managed sensitive configuration.
 
 ### Self-hosted Remote application

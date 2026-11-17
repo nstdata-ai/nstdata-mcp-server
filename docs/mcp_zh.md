@@ -190,7 +190,7 @@ gemini extensions update nstdata
 gemini extensions uninstall nstdata
 ```
 
-扩展固定 MCP `1.0.3`，仅更新 npm `latest` 不会更新它。卸载可能保留 Gemini CLI 管理的凭据。在 [Nstdata 控制台](https://app.nstdata.io/)作废 Key 也会阻止其他共用此 Key 的应用访问。
+扩展固定 MCP `1.0.5`，仅更新 npm `latest` 不会更新它。卸载可能保留 Gemini CLI 管理的凭据。在 [Nstdata 控制台](https://app.nstdata.io/)作废 Key 也会阻止其他共用此 Key 的应用访问。
 
 ## 配置
 
