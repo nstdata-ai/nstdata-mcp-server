@@ -53,7 +53,7 @@ for (const mcpPath of [undefined, '/crawl']) test(`Remote service starts only af
     const origins = [];
     const redis = await isolatedRedis(t, { allowedOrigins: () => origins });
     const options = config(await port(), redis.socketPath); origins.push(options.issuerUrl);
-    if (mcpPath !== undefined) options.mcpPath = mcpPath;
+    if (mcpPath !== undefined) { options.mcpPath = mcpPath; options.oauth = { interactionSeconds: 300 }; }
     const service = await startRemoteService(options);
     t.after(() => service.close());
     assert.equal(service.address.port, options.listen.port);
@@ -75,6 +75,17 @@ for (const mcpPath of [undefined, '/crawl']) test(`Remote service starts only af
     const resourceDiscovery = await request(options.issuerUrl + '/.well-known/oauth-protected-resource' + canonicalPath);
     assert.equal(resourceDiscovery.status, 200);
     assert.equal(JSON.parse(resourceDiscovery.body).resource, options.issuerUrl + canonicalPath);
+    const authorization = await request(options.issuerUrl + '/auth?' + new URLSearchParams({
+        client_id: options.clients[0].clientId, redirect_uri: options.clients[0].redirectUris[0], response_type: 'code',
+        scope: 'crawl:use', resource: options.issuerUrl + canonicalPath,
+        code_challenge: randomBytes(32).toString('base64url'), code_challenge_method: 'S256',
+    }));
+    assert.equal(authorization.status, 303);
+    const interactionRecords = await redis.command(['KEYS', `nstdata:mcp:{${options.redis.namespace}}:record:SW50ZXJhY3Rpb24:*`]);
+    assert.equal(interactionRecords.length, 1);
+    const interaction = JSON.parse(await redis.command(['HGET', interactionRecords[0], 'payload']));
+    assert.equal(interaction.exp - interaction.iat, mcpPath === undefined ? 1800 : 300);
+
     const alternate = await request(options.issuerUrl + (canonicalPath === '/mcp' ? '/crawl' : '/mcp'));
     assert.equal(alternate.status, 404); assert.equal(alternate.headers.location, undefined);
     await service.close(); await service.close(); await service.closed;
@@ -209,6 +220,8 @@ test('Remote service rejects unsafe direct configuration before opening any conn
             { ...options, issuerUrl: 'http://127.0.0.1:' + (options.listen.port === 65535 ? 65534 : options.listen.port + 1) },
             { ...options, redis: { namespace: options.redis.namespace } },
             { ...options, redis: { namespace: options.redis.namespace, url: 'redis://public.invalid:6379/0' } },
+            ...[null, false, { interactionSeconds: '1800' }, { rotationOverlapSeconds: 11 }, { unknown: 1 },
+                { grantSeconds: 3600 }].map(oauth => ({ ...options, oauth })),
             ...['/auth', '/crawl/', '/crawl?private=yes', false].map(mcpPath => ({ ...options, mcpPath })),
         ]) await assert.rejects(startRemoteService(input), error => error.message === unavailable);
         assert.equal(connections, 0);

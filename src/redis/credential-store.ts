@@ -18,6 +18,8 @@ export interface CredentialBinding {
 export interface RedisCredentialStore {
     /** Call only after upstream validation and consent. A revoked binding is replaced by a new ID. */
     authorize(apiToken: string): Promise<CredentialBinding>;
+    /** Nonmutating lookup; caller must first verify the supplied business API key. */
+    findBinding(apiToken: string): Promise<CredentialBinding | null>;
     resolve(id: string, version: number): Promise<HttpIdentity | null>;
     revoke(id: string, expectedVersion?: number): Promise<boolean>;
 }
@@ -153,6 +155,18 @@ export function createRedisCredentialStore(options: RedisCredentialStoreOptions)
                     if (await write(previousId, previous, next, id)) return { id, version };
                 }
                 throw new RedisStoreError();
+            } catch { throw new RedisStoreError(); }
+        },
+        async findBinding(apiToken) {
+            try {
+                if (!tokenIsValid(apiToken)) throw new RedisStoreError();
+                const fp = fingerprint(apiToken);
+                const id = await command(['GET', keys.fingerprint(fp)]);
+                if (id === null) return null;
+                if (typeof id !== 'string' || !ID.test(id)) throw new RedisStoreError();
+                const snapshot = await read(id);
+                if (!snapshot || snapshot.fingerprint !== fp || open(snapshot, id) !== apiToken) throw new RedisStoreError();
+                return snapshot.active === '1' ? { id, version: Number(snapshot.version) } : null;
             } catch { throw new RedisStoreError(); }
         },
         async resolve(id, version) {

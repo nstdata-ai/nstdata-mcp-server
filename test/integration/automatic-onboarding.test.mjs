@@ -621,4 +621,177 @@ test('automatic Remote onboarding uses public OAuth clients and independent per-
         assert.equal(refreshes, beforeRefresh + 1); assert.notEqual(auth.refresh_token, expired.refresh_token);
         assert.equal(auth.scope, 'crawl:use');
     });
+    // Independent handler instances share Redis; short synthetic expiries exercise day-scale policy.
+    const { createRedisKeys } = await import(new URL('./redis/shared.js', executable));
+    const redisKeys = createRedisKeys(store.namespace);
+    const record = async (model, id) => JSON.parse(await redis.command(['HGET', redisKeys.record(model, id), 'payload']));
+    const issue = async () => {
+        const issued = await exchange(await authorize(clientA, keys.A, { scope: 'crawl:use offline_access' }));
+        assert.equal(issued.status, 200, issued.payload.error); return issued.payload;
+    };
+    const ageRotation = raw => redis.command(['HSET', redisKeys.record('RefreshToken', raw), 'consumedAtMs', String(Date.now() - 6000)]);
+    const manage = async (page, csrf, change = {}, headers = {}) => {
+        const response = await page.fetch(`${origin}/oauth/authorizations`, { method: 'POST',
+            headers: { origin, 'content-type': 'application/x-www-form-urlencoded', ...headers },
+            body: new URLSearchParams({ csrf, apiToken: keys.A, confirm: 'revoke-all', decision: 'revoke', ...change }) });
+        const html = await response.text(); noKey(html); return { response, html };
+    };
+    async function managementForm() {
+        const page = browser(), response = await page.fetch(`${origin}/oauth/authorizations`);
+        const html = await response.text(); noKey(html); assert.equal(response.status, 200);
+        return { page, csrf: /name="csrf" value="([^"]+)"/.exec(html)?.[1] };
+    }
+    await t.test('identical simultaneous public refreshes across handler instances receive one encrypted successor pair', async () => {
+        await application.close();
+        const first = createRemoteHandler(options), second = createRemoteHandler(options); let calls = 0;
+        application = { handle: (request, response) => (++calls % 2 ? first : second).handle(request, response),
+            close: async () => { await first.close(); await second.close(); } };
+        const auth = await issue();
+        const results = await Promise.all([refresh(clientA, auth.refresh_token), refresh(clientA, auth.refresh_token)]);
+        assert.deepEqual(results.map(value => value.status), [200, 200]);
+        assert.equal(results[0].payload.access_token, results[1].payload.access_token);
+        assert.equal(results[0].payload.refresh_token, results[1].payload.refresh_token);
+        assert(results[1].payload.expires_in <= results[0].payload.expires_in + 1);
+        assert.notEqual(auth.refresh_token, results[0].payload.refresh_token);
+        const stored = await redis.command(['KEYS', `${redisKeys.prefix}refresh-*`]);
+        assert(stored.length > 0);
+        for (const key of stored) {
+            assert(!key.includes(auth.refresh_token));
+            const value = await redis.command(['GET', key]);
+            assert(!value.includes(auth.refresh_token)); assert(!value.includes(results[0].payload.access_token));
+            assert(!value.includes(results[0].payload.refresh_token));
+        }
+        const reordered = await token({ resource, refresh_token: auth.refresh_token, grant_type: 'refresh_token', client_id: clientA.client_id });
+        assert.equal(reordered.status, 200); assert.equal(reordered.payload.refresh_token, results[0].payload.refresh_token);
+        assert.equal((await protectedRequest({ authorization: `Bearer ${results[0].payload.access_token}` })).status, 200);
+    });
+    await t.test('refresh overlap rejects altered client, scope, resource and extra parameters without cached credentials or collateral revocation', async () => {
+        const auth = await issue(), rotated = await refresh(clientA, auth.refresh_token); assert.equal(rotated.status, 200);
+        for (const change of [{ client_id: clientB.client_id }, { scope: 'crawl:other' }, { scope: 'crawl:use' },
+            { resource: `${origin}/wrong` }, { extra: 'changed' }]) {
+            const result = await token({ client_id: clientA.client_id, grant_type: 'refresh_token', refresh_token: auth.refresh_token, resource, ...change });
+            assert.equal(result.status, 400); assert.equal(result.payload.access_token, undefined);
+        }
+        assert.equal((await refresh(clientA, auth.refresh_token)).payload.refresh_token, rotated.payload.refresh_token);
+        for (const suffix of ['&scope=x&scope=y', '&resource=%ZZ', '&extra=%C0%AE']) {
+            const response = await fetch(metadata.token_endpoint, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({ client_id: clientA.client_id, grant_type: 'refresh_token', refresh_token: auth.refresh_token, resource }).toString() + suffix });
+            assert.equal(response.status, 400); assert.equal((await response.json()).access_token, undefined);
+        }
+        assert.equal((await protectedRequest({ authorization: `Bearer ${rotated.payload.access_token}` })).status, 200);
+    });
+    await t.test('older-than-immediate and outside-window reuse retain family revocation', async () => {
+        for (const older of [false, true]) {
+            const auth = await issue(), first = await refresh(clientA, auth.refresh_token); assert.equal(first.status, 200);
+            let current = first.payload;
+            if (older) { const second = await refresh(clientA, first.payload.refresh_token); assert.equal(second.status, 200); current = second.payload; }
+            else await ageRotation(auth.refresh_token);
+            assert.equal((await refresh(clientA, auth.refresh_token)).status, 400);
+            assert.equal((await protectedRequest({ authorization: `Bearer ${current.access_token}` })).status, 401);
+            assert.equal((await refresh(clientA, current.refresh_token)).status, 400);
+        }
+    });
+    await t.test('grant, binding and individually revoked access tokens cannot be revived by the overlap cache', async () => {
+        for (const mode of ['grant', 'access', 'binding']) {
+            const auth = await issue(), rotated = await refresh(clientA, auth.refresh_token); assert.equal(rotated.status, 200);
+            if (mode === 'binding') {
+                const binding = await actualCredentials.findBinding(keys.A); assert(binding); await actualCredentials.revoke(binding.id, binding.version);
+            } else if (mode === 'access') {
+                const token = await record('AccessToken', rotated.payload.access_token);
+                await redis.command(['HSET', redisKeys.record('AccessToken', rotated.payload.access_token), 'destroyed', '1', 'expiresAt', '0']);
+                assert(await record('Grant', token.grantId));
+                assert.equal((await record('RefreshToken', rotated.payload.refresh_token)).consumed, undefined);
+            } else {
+                const response = await fetch(metadata.revocation_endpoint, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({ client_id: clientA.client_id, token: mode === 'grant' ? rotated.payload.refresh_token : rotated.payload.access_token }) });
+                await response.arrayBuffer(); assert.equal(response.status, 200);
+            }
+            const result = await refresh(clientA, auth.refresh_token);
+            assert.notEqual(result.status, 200); assert.equal(result.payload.access_token, undefined);
+        }
+    });
+    await t.test('missing response cache after rotation fails temporarily in-window and never mints a parallel chain', async () => {
+        const auth = await issue(), rotated = await refresh(clientA, auth.refresh_token); assert.equal(rotated.status, 200);
+        const before = await redis.command(['KEYS', `${redisKeys.prefix}record:UmVmcmVzaFRva2Vu:*`]);
+        const cache = await redis.command(['KEYS', `${redisKeys.prefix}refresh-response:*`]);
+        await redis.command(['DEL', ...cache]);
+        const result = await refresh(clientA, auth.refresh_token); assert.equal(result.status, 503); assert.equal(result.payload.access_token, undefined);
+        assert.deepEqual(await redis.command(['KEYS', `${redisKeys.prefix}record:UmVmcmVzaFRva2Vu:*`]), before);
+        assert.equal((await protectedRequest({ authorization: `Bearer ${rotated.payload.access_token}` })).status, 200);
+        await ageRotation(auth.refresh_token);
+        assert.equal((await refresh(clientA, auth.refresh_token)).status, 400);
+    });
+    await t.test('rotation refreshes inactivity while preserving absolute grant expiry and capping descendant tokens', async () => {
+        const auth = await issue(), old = await record('RefreshToken', auth.refresh_token), grant = await record('Grant', old.grantId);
+        const deadline = Math.floor(Date.now() / 1000) + 4;
+        grant.exp = deadline;
+        await redis.command(['HSET', redisKeys.record('Grant', old.grantId), 'payload', JSON.stringify(grant), 'expiresAt', String(deadline)]);
+        const rotated = await refresh(clientA, auth.refresh_token); assert.equal(rotated.status, 200);
+        assert(rotated.payload.expires_in > 0 && rotated.payload.expires_in <= 4);
+        assert.equal((await record('RefreshToken', rotated.payload.refresh_token)).exp, deadline);
+        assert.equal((await record('AccessToken', rotated.payload.access_token)).exp, deadline);
+        assert.equal((await record('Grant', old.grantId)).exp, deadline);
+        grant.exp = Math.floor(Date.now() / 1000) - 1;
+        await redis.command(['HSET', redisKeys.record('Grant', old.grantId), 'payload', JSON.stringify(grant), 'expiresAt', String(grant.exp)]);
+        assert.equal((await protectedRequest({ authorization: `Bearer ${rotated.payload.access_token}` })).status, 401);
+        assert.equal((await refresh(clientA, auth.refresh_token)).status, 400);
+    });
+    await t.test('authorization management validates key and one-use same-origin CSRF then revokes only matching-key OAuth grants', async () => {
+        const first = await issue(), another = await issue();
+        const other = await exchange(await authorize(clientB, keys.B)); assert.equal(other.status, 200);
+        const authState = authorizations.length;
+        let form = await managementForm(); assert(form.csrf);
+        assert.equal((await manage(form.page, form.csrf, {}, { origin: 'https://cross-origin.invalid' })).response.status, 403);
+        assert.equal((await manage(form.page, form.csrf, { confirm: '' })).response.status, 403);
+        form = await managementForm();
+        assert.equal((await manage(form.page, form.csrf, { apiToken: keys.rejected })).response.status, 401);
+        assert.equal((await protectedRequest({ authorization: `Bearer ${first.access_token}` })).status, 200);
+        form = await managementForm();
+        const revoked = await manage(form.page, form.csrf); assert.equal(revoked.response.status, 200); assert.match(revoked.html, /revoked/i);
+        const replay = await manage(form.page, form.csrf); assert.equal(replay.response.status, 403);
+        for (const auth of [first, another]) {
+            assert.equal((await protectedRequest({ authorization: `Bearer ${auth.access_token}` })).status, 401);
+            assert.equal((await refresh(clientA, auth.refresh_token)).status, 400);
+        }
+        assert.equal((await protectedRequest({ authorization: `Bearer ${other.payload.access_token}` })).status, 200);
+        assert.equal((await protectedRequest({ 'x-api-key': keys.A })).status, 200);
+        assert.equal(authorizations.length, authState, 'management cannot authorize or extend a binding');
+        form = await managementForm(); assert.match((await manage(form.page, form.csrf)).html, /No active MCP access/);
+        const reauthorized = await issue(); assert.equal((await protectedRequest({ authorization: `Bearer ${reauthorized.access_token}` })).status, 200);
+        assert.equal((await protectedRequest({ authorization: `Bearer ${other.payload.access_token}` })).status, 200);
+    });
+
+    await t.test('retained cookie keys decrypt overlap responses after rotation and overlap zero restores immediate reuse revocation', async () => {
+        const auth = await issue(), rotated = await refresh(clientA, auth.refresh_token); assert.equal(rotated.status, 200);
+        await application.close(); application = createRemoteHandler({ ...options, cookieKeys: ['synthetic-next-cookie-signing-key-minimum', ...options.cookieKeys] });
+        const cached = await refresh(clientA, auth.refresh_token);
+        assert.equal(cached.status, 200); assert.equal(cached.payload.refresh_token, rotated.payload.refresh_token);
+        const strictAuth = await issue();
+        await application.close(); application = createRemoteHandler({ ...options, rotationOverlapSeconds: 0 });
+        const first = await refresh(clientA, strictAuth.refresh_token); assert.equal(first.status, 200);
+        assert.equal((await refresh(clientA, strictAuth.refresh_token)).status, 400);
+        assert.equal((await protectedRequest({ authorization: `Bearer ${first.payload.access_token}` })).status, 401);
+    });
+    await t.test('a lost lease fences response publication and cannot delete a successor owner lease', async () => {
+        await application.close(); application = createRemoteHandler(options);
+        const auth = await issue(); let successorLease;
+        const cachesBefore = (await redis.command(['KEYS', `${redisKeys.prefix}refresh-response:*`])).sort();
+        await application.close();
+        application = createRemoteHandler({ ...options, store: { ...store, command: async args => {
+            if (args[0] === 'EVAL' && args[1].includes('for i=8,#KEYS')) {
+                successorLease = args[10];
+                await redis.command(['SET', successorLease, 'synthetic-successor-owner', 'PX', '1000']);
+            }
+            return store.command(args);
+        } } });
+        const result = await refresh(clientA, auth.refresh_token);
+        assert.equal(result.status, 503); assert.equal(result.payload.access_token, undefined);
+        assert.equal(await redis.command(['GET', successorLease]), 'synthetic-successor-owner');
+        const caches = await redis.command(['KEYS', `${redisKeys.prefix}refresh-response:*`]);
+        assert.deepEqual(caches.sort(), cachesBefore, 'a stale lease owner must not publish any response cache');
+        await redis.command(['DEL', successorLease]);
+        const retry = await refresh(clientA, auth.refresh_token); assert.equal(retry.status, 503); assert.equal(retry.payload.refresh_token, undefined);
+        await application.close(); application = createRemoteHandler(options);
+    });
+
 });

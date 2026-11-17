@@ -137,12 +137,36 @@ The program refuses to overwrite existing files and never prints secrets. Edit t
 | `encryptionKeys`, `currentKeyId` | Named 32-byte base64url keys and the current encryption key's ID |
 | `fingerprintKey` | Independent stable 32-byte base64url key; changing it requires a new namespace |
 | `allowedOrigins` | Optional exact browser origins; no wildcards. Non-browser requests may omit Origin |
+| `oauth` | Optional authorization lifetimes and concurrent-refresh policy; omitted fields use the defaults below |
+
+### Session policy and user controls
+
+Existing configuration files may omit `oauth`. New authorizations default to a 7-day access token, a refresh token that expires after 180 days without use, a 365-day absolute authorization limit, a 30-minute consent interaction and a 120-second authorization code. Browser sessions remain 30 days; closing the browser or expiry of that session alone does not revoke an otherwise valid background authorization. Clients refresh access tokens automatically rather than asking users to enter their key every week.
+
+| `oauth` field (seconds) | Default | Accepted range |
+|---|---:|---:|
+| `accessTokenSeconds` | 604800 (7 days) | 60–2592000 (30 days) |
+| `refreshTokenIdleSeconds` | 15552000 (180 days) | 300–31536000 (365 days) |
+| `grantSeconds` | 31536000 (365 days) | 3600–31536000 |
+| `interactionSeconds` | 1800 (30 minutes) | 60–3600 |
+| `authorizationCodeSeconds` | 120 | 30–300 |
+| `rotationOverlapSeconds` | 5 | 0–10; 0 disables concurrent-refresh overlap |
+
+Access-token and refresh-token lifetimes cannot exceed `grantSeconds`. A successful refresh can issue a new refresh token but does not extend the original grant's absolute expiry; returning a cached result does not restart its lifetime or overlap window. Even a 7-day access token must pass live grant and credential-binding checks on every request, so revocation takes effect immediately.
+
+The short overlap accommodates normal simultaneous refreshes from the same public client with identical request parameters. It returns the same issued token pair rather than creating parallel token chains. Requests outside that window, older tokens, revoked grants or mismatched parameters do not qualify; rotation and normal reuse detection remain enabled. This behavior is not a claim that every client version has passed production acceptance.
+
+An upgrade does not rewrite or extend the expiry of existing grants, tokens or encrypted bindings. The new lifetimes take effect after fresh explicit authorization; upgrading does not require logging every existing connection out. MCP lifetimes do not extend the underlying business API key's validity.
+
+Users can reconnect and authorize from their client; Cancel on the consent form cancels only the current request. To revoke existing access, open `/oauth/authorizations` on the deployment's origin, enter the API key used for those authorizations and explicitly confirm. This immediately revokes **all MCP OAuth authorizations created with that key**. It does not delete the account or revoke the business API key, does not affect another key's grants, and does not disable direct API-key authentication. After success or an already-revoked result, return to the client to connect again.
+
+A client's Disconnect or Log out action does not necessarily call the authorization server's revocation endpoint. Clients that support OAuth revocation can still use the advertised endpoint to revoke their own grant; the self-service page revokes all grants for one key and does not present an application-by-application list. The page never places the key in a URL, log or repopulated field; submissions require single-use CSRF, same-origin validation and explicit confirmation.
 
 ### OAuth client policy
 
 Automatic onboarding does not require entries in `clients`; omit the field or use `[]`. CIMD clients publish their metadata at a public HTTPS URL on port 443, without a query or fragment. Metadata requests reject private addresses and redirects and have bounded time, response size and concurrency.
 
-For clients that use DCR, registration is limited to 30 requests per minute and 10,000 stored clients per Redis namespace. Registrations persist across service restarts and expire after 30 days and 5 minutes without a client lookup. A lookup renews that retention period; expired registrations release capacity automatically. Monitor registration failures and storage capacity before admitting a large client population. Existing static clients continue to use `client_secret_basic` with S256 PKCE; public clients use `none` with S256 PKCE.
+For clients that use DCR, registration is limited to 30 requests per minute and 10,000 stored clients per Redis namespace. Registrations persist across service restarts and expire after the authorization storage maximum plus 5 minutes without a client lookup (365 days and 5 minutes by default). A lookup renews that retention period; expired registrations release capacity automatically. Monitor registration failures and storage capacity before admitting a large client population. Existing static clients continue to use `client_secret_basic` with S256 PKCE; public clients use `none` with S256 PKCE.
 
 To use `https://mcp.example.com/crawl`, add this property to the existing configuration; it is not a complete configuration file:
 

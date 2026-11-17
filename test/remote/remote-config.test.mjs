@@ -251,3 +251,43 @@ test('Remote configuration supports automatic onboarding without fixed client se
     const omitted = fixture(); delete omitted.clients;
     assert.deepEqual(parseRemoteConfig(omitted).clients, []);
 });
+
+test('Remote OAuth defaults provide long-lived sessions without changing existing configuration files', () => {
+    const input = fixture(), before = structuredClone(input);
+    const parsed = parseRemoteConfig(input);
+    assert.deepEqual(parsed.oauth, {
+        accessTokenSeconds: 604800, refreshTokenIdleSeconds: 15552000, grantSeconds: 31536000,
+        interactionSeconds: 1800, authorizationCodeSeconds: 120, rotationOverlapSeconds: 5,
+    });
+    assert.deepEqual(input, before);
+    const partial = fixture(); partial.oauth = { accessTokenSeconds: 86400, rotationOverlapSeconds: 0 };
+    assert.deepEqual(parseRemoteConfig(partial).oauth, { ...parsed.oauth, ...partial.oauth });
+});
+
+test('Remote OAuth configuration accepts documented minimum and maximum policies', () => {
+    for (const oauth of [
+        { accessTokenSeconds: 60, refreshTokenIdleSeconds: 300, grantSeconds: 3600,
+            interactionSeconds: 60, authorizationCodeSeconds: 30, rotationOverlapSeconds: 0 },
+        { accessTokenSeconds: 2592000, refreshTokenIdleSeconds: 31536000, grantSeconds: 31536000,
+            interactionSeconds: 3600, authorizationCodeSeconds: 300, rotationOverlapSeconds: 10 },
+    ]) {
+        const input = fixture(); input.oauth = oauth;
+        assert.deepEqual(parseRemoteConfig(input).oauth, oauth);
+    }
+});
+
+test('Remote OAuth configuration rejects invalid lifetimes, coercion and unknown policy fields', () => {
+    for (const oauth of [null, false, [], 'synthetic-private-policy', { unsupported: 1 }]) invalid(input => { input.oauth = oauth; });
+    for (const [field, minimum, maximum] of [
+        ['accessTokenSeconds', 60, 2592000], ['refreshTokenIdleSeconds', 300, 31536000],
+        ['grantSeconds', 3600, 31536000], ['interactionSeconds', 60, 3600],
+        ['authorizationCodeSeconds', 30, 300], ['rotationOverlapSeconds', 0, 10],
+    ]) {
+        for (const value of [minimum - 1, maximum + 1, 1.5, null, false, String(maximum)]) {
+            invalid(input => { input.oauth = { [field]: value }; });
+        }
+    }
+    invalid(input => { input.oauth = { grantSeconds: 3600 }; });
+    invalid(input => { input.oauth = { grantSeconds: 3600, accessTokenSeconds: 3601, refreshTokenIdleSeconds: 300 }; });
+    invalid(input => { input.oauth = { grantSeconds: 3600, accessTokenSeconds: 60, refreshTokenIdleSeconds: 3601 }; });
+});

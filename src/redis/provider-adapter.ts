@@ -158,7 +158,8 @@ if consumed then
   return 0
 end
 if not valid(KEYS[1], ARGV[1]) then return 0 end
-redis.call('HSET', KEYS[1], 'consumed', tostring(now))
+local precise=redis.call('TIME')
+redis.call('HSET', KEYS[1], 'consumed', tostring(now), 'consumedAtMs', tostring(tonumber(precise[1])*1000+math.floor(tonumber(precise[2])/1000)))
 return 1
 `;
 const destroyScript = common + `

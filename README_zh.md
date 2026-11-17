@@ -392,7 +392,7 @@ npx --yes @nstdata-ai/mcp-server --version
 
 - [Crawl API 与 SDK 使用](https://docs.nstdata.io/zh-CN/docs/crawl?utm_source=github&utm_medium=social&utm_campaign=mcp&utm_content=readme)
 - [MCP 客户端、工具参数与限制](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/docs/mcp_zh.md)
-- [托管 MCP 与自行部署](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/docs/remote_zh.md)：运行本地 npm 包并不会部署这个远程应用。
+- [托管 MCP 与自行部署](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/docs/remote_zh.md)：运行本地 npm 包并不会部署这个远程应用。包括回调要求、自动续期与 `/oauth/authorizations` 的授权撤销操作。
 - [Nstdata Agent Skills](https://github.com/nstdata-ai/nstdata-skills)：基于已有 MCP 连接提供工作流指引。
 - [贡献说明](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/CONTRIBUTING.md) · [变更记录](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/CHANGELOG.md) · [安全反馈](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/SECURITY.md) · [MIT 许可](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/LICENSE)
 

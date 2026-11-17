@@ -7,6 +7,7 @@ import type { OAuthHttpHandlerOptions } from './oauth-resource.js';
 import { createRedisAdapterFactory } from './redis/provider-adapter.js';
 import { type CredentialBinding, type RedisCredentialStore } from './redis/credential-store.js';
 import { RedisStoreError, type StoreOptions, validateStoreOptions } from './redis/shared.js';
+import { createRefreshOverlap } from './oauth-refresh-overlap.js';
 import { consentPageCsp, isCursorCallback, renderCallbackPage, renderConsentError } from './consent-page.js';
 
 export interface OAuthFixedClient {
@@ -27,6 +28,8 @@ export interface OAuthProviderOptions {
     store: StoreOptions;
     credentials: RedisCredentialStore;
     ttl?: Partial<Record<Lifetime, number>>;
+    /** Bounded public-client retry compatibility; 0 keeps strict immediate reuse rejection. */
+    rotationOverlapSeconds?: number;
 }
 
 export interface OAuthProviderHost {
@@ -41,8 +44,8 @@ export interface OAuthProviderHost {
 
 const scopes = ['crawl:use', 'offline_access'];
 const defaults: Record<Lifetime, number> = {
-    AccessToken: 300, AuthorizationCode: 60, RefreshToken: 2_592_000,
-    Grant: 2_592_000, Session: 2_592_000, Interaction: 300,
+    AccessToken: 604_800, AuthorizationCode: 120, RefreshToken: 15_552_000,
+    Grant: 31_536_000, Session: 2_592_000, Interaction: 1800,
 };
 
 function configuredUrl(value: string, redirect = false): URL {
@@ -73,7 +76,7 @@ function signingAlgorithm(jwks: NonNullable<Configuration['jwks']>): SigningAlgo
 }
 
 /** Internal real Authorization Server. The host owns HTTP/TLS, consent and connected Redis. */
-export function createOAuthProvider(options: OAuthProviderOptions): OAuthProviderHost {
+export function createOAuthProvider(options: OAuthProviderOptions, refreshLeaseMs = 135_000): OAuthProviderHost {
     let issuer: URL;
     let resource: URL;
     let clients: OAuthFixedClient[];
@@ -108,6 +111,7 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthProvide
                 client.name.length > 100 || /[\x00-\x1f\x7f]/.test(client.name))) throw new Error();
             for (const uri of client.redirectUris) configuredUrl(uri, true);
         }
+        if (!Number.isSafeInteger(options.rotationOverlapSeconds ?? 5) || (options.rotationOverlapSeconds ?? 5) < 0 || (options.rotationOverlapSeconds ?? 5) > 10) throw new Error();
         ttl = { ...defaults };
         if (options.ttl && Object.keys(options.ttl).some(name => !Object.hasOwn(defaults, name))) throw new Error();
         for (const name of Object.keys(ttl) as Lifetime[]) {
@@ -205,7 +209,15 @@ return n
                 long: { httpOnly: true, sameSite: 'lax', secure: issuer.protocol === 'https:' },
                 short: { httpOnly: true, sameSite: 'lax', secure: issuer.protocol === 'https:' },
             },
-            jwks, ttl, scopes, responseTypes: ['code'], clientAuthMethods: ['none', 'client_secret_basic'],
+            jwks, ttl: { ...ttl,
+                AccessToken: (ctx) => Math.min(ttl.AccessToken, ctx?.oidc.entities.Grant?.exp ? ctx.oidc.entities.Grant.exp - Math.floor(Date.now() / 1000) : ttl.AccessToken),
+                // Rotation renews inactivity only. Every descendant is capped by the original Grant.
+                RefreshToken: (ctx) => {
+                    const parent = ctx.oidc.entities.Grant;
+                    if (!parent || parent.isExpired) throw new errors.InvalidGrant();
+                    return Math.min(ttl.RefreshToken, parent.exp! - Math.floor(Date.now() / 1000));
+                },
+            }, scopes, responseTypes: ['code'], clientAuthMethods: ['none', 'client_secret_basic'],
             pkce: { required: () => true },
             rotateRefreshToken: true, expiresWithSession: () => false,
             // Explicit ongoing Crawl consent also covers OAuth clients that do not send OIDC prompt/offline_access.
@@ -226,9 +238,9 @@ return n
                 revocation: { enabled: true, allowedPolicy: (_ctx, client, token) => client.clientId === token.clientId },
                 resourceIndicators: {
                     enabled: true, defaultResource: () => resource.href, useGrantedResource: () => true,
-                    getResourceServerInfo: (_ctx, identifier) => {
+                    getResourceServerInfo: (ctx, identifier) => {
                         if (identifier !== resource.href) throw new errors.InvalidTarget();
-                        return { scope: 'crawl:use', audience: resource.href, accessTokenFormat: 'opaque', accessTokenTTL: ttl.AccessToken };
+                        return { scope: 'crawl:use', audience: resource.href, accessTokenFormat: 'opaque', accessTokenTTL: Math.min(ttl.AccessToken, ctx.oidc.entities.Grant?.exp ? ctx.oidc.entities.Grant.exp - Math.floor(Date.now() / 1000) : ttl.AccessToken) };
                     },
                 },
             },
@@ -300,6 +312,7 @@ return n
             (ctx.body as Record<string, unknown>).scopes_supported = [...scopes];
         }
     });
+    provider.use(createRefreshOverlap({ provider, store, cookieKeys, seconds: options.rotationOverlapSeconds ?? 5, leaseMs: refreshLeaseMs }));
     provider.proxy = false;
     const callback = provider.callback();
     const metadata: OAuthMetadata = {

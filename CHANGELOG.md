@@ -14,6 +14,9 @@
 
 ### Self-hosted Remote application
 
+- Use configurable 7-day access tokens, 180-day refresh inactivity and a 365-day absolute grant for new authorizations, with bounded concurrent-refresh overlap that preserves rotation and revocation.
+- Add explicit self-service revocation for all MCP OAuth authorizations associated with one API key, without revoking the key itself.
+
 - Add a separate Remote MCP application and container build, keeping OAuth and Redis dependencies and runtime output outside the stdio npm package.
 - Allow a configured Remote MCP endpoint such as `/crawl`, retaining `/mcp` as the default and binding OAuth discovery and tokens to the selected resource.
 - Support a platform-managed HTTPS ingress with a private HTTP backend, without requiring application certificate files or proxy IP ranges; retain the existing direct TLS and IP-restricted modes.

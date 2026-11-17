@@ -7,6 +7,7 @@ import { createOAuthHttpHandler } from './oauth-resource.js';
 import type { HttpHandlerOptions } from './http-handler.js';
 import { createRedisAdapterFactory } from './redis/provider-adapter.js';
 import { createRemoteRequestPolicy, mcpEndpointPath } from './remote-request.js';
+import { authorizationPageCsp, renderAuthorizationPage, renderAuthorizationResult } from './authorization-page.js';
 import { consentPageCsp, consentFormCsp, isCursorCallback, renderConsentError, renderConsentPage } from './consent-page.js';
 
 export interface RemoteHandlerOptions extends OAuthProviderOptions {
@@ -92,9 +93,11 @@ function configureRemoteHandler(options: RemoteHandlerOptions): RemoteHandler {
     const cookieKeys = [...options.cookieKeys];
     const verifyApiKey = options.verifyApiKey;
     const authorizeCredential = options.credentials.authorize.bind(options.credentials);
+    const findCredentialBinding = options.credentials.findBinding?.bind(options.credentials);
+    const revokeCredential = options.credentials.revoke.bind(options.credentials);
     const providerCsp = `default-src 'none'; script-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`;
     const requestAllowed = createRemoteRequestPolicy(options.issuerUrl, options.trustedProxyCidrs, options.tlsTermination);
-    const oauth = createOAuthProvider(options);
+    const oauth = createOAuthProvider(options, timeout + 5000);
     // The request policy validates forwarded headers before Koa uses the proxy protocol.
     oauth.provider.proxy = options.trustedProxyCidrs !== undefined || options.tlsTermination === 'ingress';
     const mcp = createOAuthHttpHandler({ resourceUrl: resource.href, allowedOrigins: [...allowedOrigins],
@@ -103,7 +106,10 @@ function configureRemoteHandler(options: RemoteHandlerOptions): RemoteHandler {
         maxRequestBodyBytes: maxBody });
     const Adapter = createRedisAdapterFactory({ ...options.store, invalidGrant: () => new errors.InvalidGrant() });
     const csrfStore = new Adapter('InteractionCsrf');
-    const csrfLifetime = Math.min(300, options.store.maxTtlSeconds);
+    const csrfLifetime = Math.min(options.ttl?.Interaction ?? 1800, options.store.maxTtlSeconds);
+    const managementCsrfLifetime = Math.min(300, options.store.maxTtlSeconds);
+    const managementCommand = options.store.command;
+    const managementAdmissionKey = `nstdata:mcp:{${options.store.namespace}}:onboarding:authorizations`;
     const active = new Set<AbortController>();
     let closed = false;
 
@@ -114,24 +120,44 @@ function configureRemoteHandler(options: RemoteHandlerOptions): RemoteHandler {
         const values = current === undefined ? [] : Array.isArray(current) ? current.map(String) : [String(current)];
         response.setHeader('Set-Cookie', [...values, `${cookieName}=${value}; Path=${path}; Max-Age=${maxAge}; HttpOnly; SameSite=Strict${issuer.protocol === 'https:' ? '; Secure' : ''}`]);
     };
-    async function page(response: ServerResponse, uid: string, client: { id: string; name: string; callbackOrigin: string }, status = 200, error = '') {
+    const csrfSeconds = (uid: string) => uid === 'authorizations' ? managementCsrfLifetime : csrfLifetime;
+    async function issueCsrf(response: ServerResponse, uid: string, path: string) {
+        const lifetime = csrfSeconds(uid);
         const nonce = randomBytes(32).toString('base64url');
-        const payload = `${nonce}.${Math.floor(Date.now() / 1000) + csrfLifetime}`;
+        const payload = `${nonce}.${Math.floor(Date.now() / 1000) + lifetime}`;
         const token = `${payload}.${mac(cookieKeys[0], uid, payload)}`;
-        await csrfStore.upsert(`${uid}.${nonce}`, { uid }, csrfLifetime);
+        await csrfStore.upsert(`${uid}.${nonce}`, { uid }, lifetime);
+        cookie(response, path, token, lifetime);
+        return token;
+    }
+    async function managementPage(response: ServerResponse, status = 200, error = '') {
+        const csrf = await issueCsrf(response, 'authorizations', '/oauth/authorizations');
+        response.statusCode = status;
+        response.setHeader('Content-Security-Policy', authorizationPageCsp);
+        response.setHeader('Content-Type', 'text/html; charset=utf-8');
+        response.end(renderAuthorizationPage({ action: '/oauth/authorizations', csrf, error }));
+    }
+    function managementResult(response: ServerResponse, outcome: 'revoked' | 'already-revoked') {
+        response.statusCode = 200;
+        response.setHeader('Content-Security-Policy', authorizationPageCsp);
+        response.setHeader('Content-Type', 'text/html; charset=utf-8');
+        response.end(renderAuthorizationResult({ outcome }));
+    }
+    async function page(response: ServerResponse, uid: string, client: { id: string; name: string; callbackOrigin: string }, status = 200, error = '') {
+        const token = await issueCsrf(response, uid, `/oauth/interaction/${uid}`);
         if (response.destroyed || response.writableEnded) return;
-        cookie(response, `/oauth/interaction/${uid}`, token, csrfLifetime);
         response.statusCode = status;
         response.setHeader('Content-Security-Policy', consentFormCsp(client.callbackOrigin));
         response.setHeader('Content-Type', 'text/html; charset=utf-8');
         response.end(renderConsentPage({ action: `/oauth/interaction/${uid}`, csrf: token, client, error }));
     }
     async function consumeCsrf(request: IncomingMessage, uid: string, token: string) {
+        const lifetime = csrfSeconds(uid);
         const cookies = (request.headers.cookie ?? '').split(';').map(value => value.trim()).filter(value => value.startsWith(`${cookieName}=`));
         if (cookies.length !== 1 || !same(cookies[0].slice(cookieName.length + 1), token)) return false;
         const match = /^([A-Za-z0-9_-]{43})\.([0-9]{1,12})\.([A-Za-z0-9_-]{43})$/.exec(token);
         if (!match || Number(match[2]) <= Math.floor(Date.now() / 1000) ||
-            Number(match[2]) > Math.floor(Date.now() / 1000) + csrfLifetime) return false;
+            Number(match[2]) > Math.floor(Date.now() / 1000) + lifetime) return false;
         const payload = `${match[1]}.${match[2]}`;
         if (!cookieKeys.some(key => same(mac(key, uid, payload), match[3]))) return false;
         try { await csrfStore.consume(`${uid}.${match[1]}`); return true; }
@@ -167,9 +193,10 @@ function configureRemoteHandler(options: RemoteHandlerOptions): RemoteHandler {
                 const origin = request.headers.origin;
                 const isMcp = url.pathname === resource.pathname || url.pathname.startsWith('/.well-known/oauth-');
                 const interaction = /^\/oauth\/interaction\/([A-Za-z0-9_-]{16,256})$/.exec(url.pathname);
-                browserInteraction = interaction !== null;
+                const management = url.pathname === '/oauth/authorizations';
+                browserInteraction = interaction !== null || management;
                 const length = request.headers['content-length'];
-                if (length !== undefined && (!/^\d+$/.test(length) || Number(length) > (interaction ? maxForm : maxBody))) {
+                if (length !== undefined && (!/^\d+$/.test(length) || Number(length) > ((interaction || management) ? maxForm : maxBody))) {
                     if (interaction) consentError(response, 413, 'Authorization form too large', 'Return to your application and connect again.');
                     else reply(response, 413, 'Request too large');
                     return;
@@ -220,6 +247,48 @@ function configureRemoteHandler(options: RemoteHandlerOptions): RemoteHandler {
                     if (interaction) consentError(response, 403, 'Authorization blocked', 'The request did not come from this authorization page. Return to your application and connect again.');
                     else reply(response, 403, 'Forbidden');
                     return;
+                }
+                if (management) {
+                    const admitted = await managementCommand(['EVAL', `local n=redis.call('INCR',KEYS[1]); if n==1 then redis.call('EXPIRE',KEYS[1],60) end return n`,
+                        '1', managementAdmissionKey]);
+                    controller.signal.throwIfAborted();
+                    if (!Number.isSafeInteger(admitted) || Number(admitted) < 1) throw new Error();
+                    if (Number(admitted) > 120) { response.setHeader('Retry-After', '60'); reply(response, 429, 'temporarily_unavailable'); return; }
+                    if (url.search || !['GET', 'POST'].includes(request.method ?? '')) {
+                        consentError(response, 400, 'Invalid authorization request', 'Open the authorization management page again.'); return;
+                    }
+                    if (request.method === 'GET') { await managementPage(response); return; }
+                    if (origin !== issuer.origin || !/^application\/x-www-form-urlencoded(?:\s*;\s*charset=utf-8)?$/i.test(request.headers['content-type'] ?? '')) {
+                        consentError(response, 403, 'Request blocked', 'Open the authorization management page again.'); return;
+                    }
+                    let form;
+                    try {
+                        const bytes = await bodyBytes(request, AbortSignal.any([controller.signal, AbortSignal.timeout(Math.min(timeout, 10_000))]), maxForm);
+                        form = new URLSearchParams(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+                    } catch (error) {
+                        consentError(response, error instanceof RangeError ? 413 : 400, 'Invalid form', 'Open the authorization management page again.'); return;
+                    }
+                    const fields = [...form.keys()];
+                    if (new Set(fields).size !== fields.length || fields.some(name => !['csrf', 'apiToken', 'confirm', 'decision'].includes(name)) ||
+                        form.get('confirm') !== 'revoke-all' || form.get('decision') !== 'revoke') {
+                        await managementPage(response, 403, 'Confirm that you want to revoke every MCP OAuth authorization created with this API key.'); return;
+                    }
+                    if (!await consumeCsrf(request, 'authorizations', form.get('csrf') ?? '')) {
+                        await managementPage(response, 403, 'This form expired or was already used. Enter your API key and confirm again.'); return;
+                    }
+                    cookie(response, url.pathname, '', 0);
+                    const apiToken = form.get('apiToken') ?? '';
+                    let accepted;
+                    try { accepted = await verifyApiKey(apiToken, controller.signal); }
+                    catch { if (!controller.signal.aborted) await managementPage(response, 503, 'Key verification is temporarily unavailable.'); return; }
+                    controller.signal.throwIfAborted();
+                    if (accepted !== true) { await managementPage(response, 401, 'The API key was not accepted.'); return; }
+                    if (!findCredentialBinding) throw new Error();
+                    const binding = await findCredentialBinding(apiToken);
+                    controller.signal.throwIfAborted();
+                    const revoked = binding && await revokeCredential(binding.id, binding.version);
+                    controller.signal.throwIfAborted();
+                    managementResult(response, revoked ? 'revoked' : 'already-revoked'); return;
                 }
                 if (interaction) {
                     if (url.search || !['GET', 'POST'].includes(request.method ?? '')) {
