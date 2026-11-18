@@ -40,6 +40,15 @@
 
 ## 快速开始 使用托管 MCP
 
+**一句话接入。** 把下面这段话粘贴到你正在使用的 Agent：
+
+```text
+请按下面的说明在当前客户端接入 Nstdata Crawl MCP：
+https://raw.githubusercontent.com/nstdata-ai/nstdata-skills/main/nstdata-mcp-onboarding/SKILL.md
+```
+
+Agent 会在客户端支持的情况下帮你添加连接。浏览器弹出 OAuth 授权页后，输入你的 Nstdata API Key 并完成授权。[查看接入 Skill](https://github.com/nstdata-ai/nstdata-skills/blob/main/nstdata-mcp-onboarding/SKILL.md)。
+
 ### 第一步 准备账号
 
 从 [Nstdata 控制台](https://app.nstdata.io/?utm_source=github&utm_medium=social&utm_campaign=mcp&utm_content=readme)获取 **Nstdata API Key**，用于连接 MCP 和调用抓取服务。连接托管 MCP 时，在授权页面输入同一个 API Key 即可。请确保账号有可用额度。

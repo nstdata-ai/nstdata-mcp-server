@@ -40,6 +40,15 @@ Start with a known URL. This server does not provide web search. Requests use yo
 
 ## Quick Start — Hosted MCP
 
+**Connect with one prompt.** Paste this into your agent to add the hosted connection in your current client:
+
+```text
+Connect Nstdata Crawl MCP in this client using the instructions at
+https://raw.githubusercontent.com/nstdata-ai/nstdata-skills/main/nstdata-mcp-onboarding/SKILL.md
+```
+
+The agent can register the connection where supported. When prompted, complete OAuth in your browser with your Nstdata API Key. [View the onboarding skill](https://github.com/nstdata-ai/nstdata-skills/blob/main/nstdata-mcp-onboarding/SKILL.md).
+
 ### 1. Prepare your account
 
 Get your **Nstdata API Key** from the [Nstdata dashboard](https://app.nstdata.io/?utm_source=github&utm_medium=social&utm_campaign=mcp&utm_content=readme) to connect to MCP and call the Crawl API. When connecting to hosted MCP, enter the same API key on the authorization page. Make sure your account has available credits.
