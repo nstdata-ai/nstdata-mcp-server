@@ -1,0 +1,11 @@
+{
+  "name": "nstdata-crawl",
+  "version": "1.0.0",
+  "description": "Read a web page as Markdown or crawl a site with Nstdata's hosted Crawl tools in Cursor.",
+  "author": { "name": "Nstdata" },
+  "homepage": "https://www.nstdata.io/",
+  "repository": "https://github.com/nstdata-ai/nstdata-mcp-server",
+  "license": "MIT",
+  "logo": "./logo.png",
+  "mcpServers": "./mcp.json"
+}
