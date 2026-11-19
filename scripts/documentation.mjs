@@ -20,6 +20,10 @@ function codeBlocks(text) {
     return blocks;
 }
 
+export const onboardingCurl = [
+    'curl', '-fsSL', 'https://github.com/nstdata-ai/nstdata-skills/raw/main/nstdata-mcp-onboarding/SKILL.md',
+];
+
 export function shellCommands(text) {
     const commands = [];
     for (const block of codeBlocks(text).filter(token => token.lang === 'sh')) {
@@ -29,7 +33,8 @@ export function shellCommands(text) {
             if (continued) assert.match(line, /\s\\$/, 'Line continuation must follow a complete argument');
             words.push(...literalWords(continued ? line.trimEnd().slice(0, -1) : line));
             if (continued) continue;
-            assert.ok(['npm', 'npx', 'node', 'codex', 'claude', 'gemini'].includes(words[0]), 'Unsupported documentation executable');
+            if (words[0] === 'curl') assert.deepEqual(words, onboardingCurl, 'Unsupported documentation curl command');
+            else assert.ok(['npm', 'npx', 'node', 'codex', 'claude', 'gemini'].includes(words[0]), 'Unsupported documentation executable');
             commands.push(words);
             words = [];
         }

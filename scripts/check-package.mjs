@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { harness, envelope, json } from '../test/helpers.mjs';
-import { checkMarkdown, shellCommands } from './documentation.mjs';
+import { onboardingCurl, checkMarkdown, shellCommands } from './documentation.mjs';
 import { checkDocumentedSetup } from './check-documentation.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -57,7 +57,9 @@ try {
     assert.equal(lock.packages['node_modules/@nstdata-ai/ip-lookup'], undefined);
     assert.equal(lock.packages['node_modules/@nstdata-ai/crawl'].version, manifest.dependencies['@nstdata-ai/crawl']);
     for (const file of ['README.md', 'README_zh.md']) {
-        assert.deepEqual(shellCommands(fs.readFileSync(path.join(root, file), 'utf8'))[0],
+        const [onboarding, codexSetup] = shellCommands(fs.readFileSync(path.join(root, file), 'utf8'));
+        assert.deepEqual(onboarding, onboardingCurl);
+        assert.deepEqual(codexSetup,
             ['codex', 'mcp', 'add', 'nstdata', '--url', 'https://mcp.nstdata.io/crawl']);
     }
     assert.ok(fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8').split('\n').includes(`## ${manifest.version}`), 'Missing version in changelog');
