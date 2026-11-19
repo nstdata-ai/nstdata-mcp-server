@@ -72,7 +72,7 @@ https://mcp.nstdata.io/crawl
 | Codex 桌面版 | 在 MCP 设置添加流式 HTTP 服务，按下方步骤授权，无需安装 CLI。 |
 | Codex CLI | 执行 `codex mcp add nstdata --url https://mcp.nstdata.io/crawl`，然后授权。 |
 | Claude Code | 执行 `claude mcp add --transport http --scope user nstdata https://mcp.nstdata.io/crawl`，然后通过 `/mcp` 授权。 |
-| Cursor | 添加下方远程 JSON 配置，在 MCP 设置中授权。 |
+| Cursor | 安装[托管 Crawl 插件](plugins/nstdata-crawl/README.md)，或使用下方远程 JSON 配置。 |
 | Claude 网页／桌面端 | 添加自定义远程连接器，填写上述地址。 |
 | 其他客户端 | 添加 Streamable HTTP 服务，使用 OAuth 或 X-API-Key；配置字段以客户端要求为准。 |
 
@@ -127,7 +127,9 @@ claude mcp add --transport http --scope user nstdata https://mcp.nstdata.io/craw
 <details>
 <summary><strong>Cursor</strong></summary>
 
-将以下内容合入用户 `~/.cursor/mcp.json` 或项目 `.cursor/mcp.json`，保留已有服务：
+打开 Cursor 插件设置，选择 **Add Marketplace → Import from GitHub**，输入 `https://github.com/nstdata-ai/nstdata-mcp-server.git`。选择 **nstdata-crawl → Add for Myself**，在 MCP 设置中连接插件的 **crawl** 服务，按浏览器提示完成授权，即可在 Agent 对话中抓取网页。同仓库的 **nstdata** 插件在本地运行，也支持 Proxy。
+
+**手动配置。** 将以下内容合入用户 `~/.cursor/mcp.json` 或项目 `.cursor/mcp.json`，保留已有服务：
 
 ```json
 {
