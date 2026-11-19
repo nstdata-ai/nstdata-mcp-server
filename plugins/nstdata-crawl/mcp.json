@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "crawl": {
+      "url": "https://mcp.nstdata.io/crawl"
+    }
+  }
+}
