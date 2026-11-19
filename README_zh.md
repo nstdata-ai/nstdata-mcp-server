@@ -72,7 +72,7 @@ https://mcp.nstdata.io/crawl
 | Codex 桌面版 | 在 MCP 设置添加流式 HTTP 服务，按下方步骤授权，无需安装 CLI。 |
 | Codex CLI | 执行 `codex mcp add nstdata --url https://mcp.nstdata.io/crawl`，然后授权。 |
 | Claude Code | 执行 `claude mcp add --transport http --scope user nstdata https://mcp.nstdata.io/crawl`，然后通过 `/mcp` 授权。 |
-| Cursor | 安装[托管 Crawl 插件](plugins/nstdata-crawl/README.md)，或使用下方远程 JSON 配置。 |
+| Cursor | 安装[托管 Crawl 插件](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/plugins/nstdata-crawl/README.md)，或使用下方远程 JSON 配置。 |
 | Claude 网页／桌面端 | 添加自定义远程连接器，填写上述地址。 |
 | 其他客户端 | 添加 Streamable HTTP 服务，使用 OAuth 或 X-API-Key；配置字段以客户端要求为准。 |
 

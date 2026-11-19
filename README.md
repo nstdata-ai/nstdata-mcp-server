@@ -72,7 +72,7 @@ https://mcp.nstdata.io/crawl
 | Codex desktop | Add a Streamable HTTP server in MCP settings. No CLI required. |
 | Codex CLI | Add the server in a terminal, then authorize. |
 | Claude Code | Add the server in a terminal, then authorize through `/mcp`. |
-| Cursor | Install the [hosted Crawl plugin](plugins/nstdata-crawl/README.md) or use the remote JSON below. |
+| Cursor | Install the [hosted Crawl plugin](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/plugins/nstdata-crawl/README.md) or use the remote JSON below. |
 | Claude web / desktop | Add a custom remote connector with the endpoint above. |
 | Other clients | Add a Streamable HTTP connection with OAuth or an `X-API-Key` header. Configuration fields vary by client. |
 
