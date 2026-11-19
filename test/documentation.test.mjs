@@ -9,7 +9,7 @@ const version = JSON.parse(fs.readFileSync(new URL('../package.json', import.met
 
 const documents = ['README.md', 'README_zh.md', 'CONTRIBUTING.md', 'CHANGELOG.md', 'SECURITY.md',
     'docs/mcp.md', 'docs/mcp_zh.md', 'docs/proxy.md', 'docs/proxy_zh.md', 'docs/remote.md', 'docs/remote_zh.md',
-    'plugins/nstdata/README.md', 'plugins/nstdata/README_zh.md'];
+    'plugins/nstdata/README.md', 'plugins/nstdata/README_zh.md', 'plugins/nstdata-crawl/README.md'];
 
 test('the standalone plugin includes its own installation guide and MIT license', () => {
     const directory = new URL('../plugins/nstdata/', import.meta.url);
@@ -33,7 +33,7 @@ test('Cursor marketplace resolves its own plugin and credential configuration', 
     const market = read('.cursor-plugin/marketplace.json');
     assert.equal(market.name, 'nstdata');
     assert.deepEqual(market.plugins.map(plugin => [plugin.name, plugin.source]),
-        [['nstdata', './plugins/nstdata']]);
+        [['nstdata', './plugins/nstdata'], ['nstdata-crawl', './plugins/nstdata-crawl']]);
     const plugin = read('plugins/nstdata/.cursor-plugin/plugin.json');
     assert.equal(plugin.name, 'nstdata');
     assert.equal(plugin.mcpServers, './mcp.json');
@@ -48,6 +48,17 @@ test('Cursor marketplace resolves its own plugin and credential configuration', 
     }
     assert.deepEqual(plugin.variables.properties.NSTDATA_MODULES.enum, ['crawl', 'proxy', 'crawl,proxy']);
     assert.equal(plugin.variables.properties.NSTDATA_MODULES.default, 'crawl');
+});
+
+test('hosted Cursor plugin resolves to the Crawl OAuth endpoint', () => {
+    const market = JSON.parse(fs.readFileSync('.cursor-plugin/marketplace.json', 'utf8'));
+    const entry = market.plugins.find(plugin => plugin.name === 'nstdata-crawl');
+    const directory = new URL('../' + entry.source + '/', import.meta.url);
+    const manifest = JSON.parse(fs.readFileSync(new URL('.cursor-plugin/plugin.json', directory), 'utf8'));
+    assert.equal(manifest.name, entry.name);
+    assert.ok(fs.statSync(new URL(manifest.logo, directory)).isFile());
+    const config = JSON.parse(fs.readFileSync(new URL(manifest.mcpServers, directory), 'utf8'));
+    assert.deepEqual(config.mcpServers, { crawl: { url: 'https://mcp.nstdata.io/crawl' } });
 });
 
 test('Claude Code marketplace uses its own MCP file and module-dependent credentials', () => {

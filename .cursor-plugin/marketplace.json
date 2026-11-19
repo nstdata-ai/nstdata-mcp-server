@@ -7,6 +7,10 @@
     {
       "name": "nstdata",
       "source": "./plugins/nstdata"
+    },
+    {
+      "name": "nstdata-crawl",
+      "source": "./plugins/nstdata-crawl"
     }
   ]
 }
