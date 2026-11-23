@@ -383,6 +383,8 @@ Tools do not automatically retry, poll, or read references. The agent can make f
 | Added or authorized, but no tools in the conversation | Reload the connection and start a new conversation. Inspect MCP startup errors; saved configuration is not proof of a working connection. |
 | OAuth link expired | Start a fresh authorization from the client rather than reusing the old browser link. |
 | OAuth refresh fails / `invalid_scope` | Reauthorize; if it persists, report the client version and sanitized error. Where supported, test X-API-Key separately. Preserve existing task references. |
+| Crawl reports insufficient credits | Add credits to the workspace associated with your API key, or contact its administrator. |
+| Crawl reports a workspace mismatch | Use an API key for the intended workspace. For OAuth, reauthorize with that key. Keep existing task IDs and result references. |
 | Local process cannot start | Check Node.js version, the client's PATH, `npx`, and required environment variables. |
 | Only a task ID or content reference is returned | Query the original task or read the reference; do not submit again to obtain the body. |
 | Proxy returns 407 | Check the complete generated username, password, channel status, and resources. The status alone does not identify the cause. |
