@@ -8,7 +8,70 @@ import { httpURL, identifier, formats, scrapeOptions } from './crawl-schema.js';
 import { serializeData, taskFailed, requireSubmissionId } from './crawl-result.js';
 import { boundResult, configuredSecrets } from '../shared/output.js';
 
-export function registerCrawlTools(server: McpServer, client: NstDataClient, config: Config): void {
+const workspaceMismatch = 'CRAWL_WORKSPACE_MISMATCH';
+
+async function isWorkspaceMismatch(response: Response, limit: number, readTimeoutMs: number): Promise<boolean> {
+    if (!response.body || response.body.locked ||
+        response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase() !== 'application/json' ||
+        Number(response.headers.get('content-length')) > limit) return false;
+
+    const reader = response.body.getReader();
+    const deadline = AbortSignal.timeout(readTimeoutMs);
+    const cancel = () => { void reader.cancel().catch(() => {}); };
+    deadline.addEventListener('abort', cancel, { once: true });
+    const bytes = new Uint8Array(limit);
+    let used = 0;
+    try {
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (value.byteLength > limit - used) return false;
+            bytes.set(value, used);
+            used += value.byteLength;
+        }
+        if (deadline.aborted) return false;
+        const json: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, used)));
+        return json !== null && typeof json === 'object' && 'err' in json && json.err === true &&
+            'code' in json && json.code === workspaceMismatch;
+    } catch {
+        return false;
+    } finally {
+        deadline.removeEventListener('abort', cancel);
+        if (!deadline.aborted) cancel();
+        reader.releaseLock();
+    }
+}
+
+function createCrawlFetch({ maxResponseBytes, baseURL, httpTimeoutMs }: Config): typeof globalThis.fetch {
+    const limit = Math.min(4096, maxResponseBytes);
+    // Leave time for the SDK to report the HTTP status when the error body stalls.
+    const readTimeoutMs = Math.max(1, Math.min(100, Math.floor(httpTimeoutMs / 4)));
+    const billing = new URL(baseURL).origin === 'https://api.nstdata.io'
+        ? 'https://app.nstdata.io/billing/add-credits'
+        : 'the Console for this environment';
+    return async (input, init) => {
+        const response = await globalThis.fetch(input, init);
+        if (response.status === 402) {
+            void response.body?.cancel().catch(() => {});
+            throw new ToolFailure('UPSTREAM_ERROR',
+                `The Crawl workspace has insufficient credits. Select that workspace in ${billing} and add credits, or contact its administrator for help.`,
+                { statusCode: 402 });
+        }
+        // The Crawl SDK discards non-2xx bodies, including storage errors.
+        if (response.status === 409 && await isWorkspaceMismatch(response, limit, readTimeoutMs)) {
+            throw new ToolFailure(workspaceMismatch,
+                'The API key does not match the active Crawl workspace. Use an API key for the intended workspace. For OAuth, reconnect using that key. No automatic retry was performed.',
+                { statusCode: 409 });
+        }
+        return response;
+    };
+}
+
+export function registerCrawlTools(server: McpServer, config: Config): void {
+    const client = new NstDataClient(config.apiToken!, {
+        baseURL: config.baseURL,
+        fetch: createCrawlFetch(config),
+    });
     server.registerTool('nstdata_crawl_read_result', {
         title: 'Read stored content',
         description: 'Read a Crawl storage reference. Returns a chunk that fits the output budget, at most 16000 units. Continue with the actual nextOffset until absent or the authorized budget is reached. Text offsets count Unicode code points; binary offsets count bytes. Each call downloads the reference once, within the response byte limit.',

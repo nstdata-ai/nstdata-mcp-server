@@ -355,6 +355,7 @@ Task `failed`/`expired` or `success: false` sets `isError`; page failures remain
 | Error | Meaning / handling |
 |---|---|
 | `AUTHORIZATION_FAILED` | HTTP or API-envelope 401/403; check credentials and access |
+| `CRAWL_WORKSPACE_MISMATCH` | HTTP 409. Use an API key for the intended workspace. For OAuth, reauthorize with that key. Keep existing task IDs and result references. |
 | `RATE_LIMITED` | HTTP or API-envelope 429; stop and inspect service limits |
 | `UPSTREAM_ERROR` | Request/response failure; optional `statusCode` and `apiCode` are separate. A 3xx status is a refused redirect |
 | `TIMEOUT`, `CANCELLED` | Local waiting stopped; submitted remote tasks may still run |
@@ -362,6 +363,8 @@ Task `failed`/`expired` or `success: false` sets `isError`; page failures remain
 | `INVALID_RESPONSE` | Invalid response content, including malformed UTF-8 in a text reference |
 | `OUTPUT_LIMIT` | Serialized output exceeded the cap; use smaller pages/chunks or actual identifiers in `error.recovery` |
 | `SENSITIVE_OUTPUT` | A credential matched a property name, binary content or an opaque identifier; the result was withheld |
+
+For `UPSTREAM_ERROR` with `statusCode: 402`, add credits to the workspace associated with your API key or contact its administrator.
 
 No request is automatically retried. An uncertain submission without an ID requires review, not another creation. A failed read does not create or cancel a task.
 

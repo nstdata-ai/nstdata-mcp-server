@@ -14,7 +14,7 @@ const keys = { A: 'synthetic-upstream-A', B: 'synthetic-upstream-B', bad: 'synth
 const keyLabels = new Map(Object.entries(keys).map(([label, value]) => [value, label]));
 
 for (const mcpPath of ['/mcp', '/crawl']) test(`actual Remote consent, OAuth and MCP remain bound to live Redis authorization at ${mcpPath}`, { timeout: 20_000 }, async t => {
-    let origin, application, startedAbort;
+    let origin, application, startedAbort, workspaceConflicts = 0;
     const origins = [], extraHosts = [];
     const abortStarted = new Promise(resolve => { startedAbort = resolve; });
     const upstreamCalls = [], business = [], aborted = [];
@@ -32,6 +32,11 @@ for (const mcpPath of ['/mcp', '/crawl']) test(`actual Remote consent, OAuth and
                 if (label === 'abort') startedAbort();
             });
             return Response.json({ code: 200, err: false, msg: 'SUCCESS', data: { email: `${label}@example.test`, balance: 1, referralBalance: 0 } });
+        }
+        if (label === 'A' && url.pathname === '/api/v1/crawl/workspace-conflict') {
+            workspaceConflicts++;
+            return Response.json({ err: true, code: 'CRAWL_WORKSPACE_MISMATCH', msg: `private upstream ${keys.A}` },
+                { status: 409, headers: { 'content-type': 'application/json; charset=utf-8' } });
         }
         assert(url.pathname === `/api/v1/crawl/existing-${label}` && ['A', 'B'].includes(label));
         business.push(label);
@@ -197,6 +202,16 @@ for (const mcpPath of ['/mcp', '/crawl']) test(`actual Remote consent, OAuth and
             await client.connect(new StreamableHTTPClientTransport(new URL(resource), { requestInit: { headers: { authorization: `Bearer ${token.access_token}` } } }));
             assert.equal((await client.listTools()).tools.length, 6); return client;
         }));
+        const before = snapshot();
+        const mismatch = await connected[0].callTool({ name: 'nstdata_crawl_status', arguments: { crawlId: 'workspace-conflict' } });
+        assert.equal(mismatch.isError, true);
+        assert.equal(mismatch.structuredContent.error.code, 'CRAWL_WORKSPACE_MISMATCH');
+        assert.equal(mismatch.structuredContent.error.statusCode, 409);
+        assert.match(mismatch.structuredContent.error.message, /workspace.*reconnect/i);
+        noKey(JSON.stringify(mismatch));
+        assert.doesNotMatch(JSON.stringify(mismatch), /private upstream/);
+        assert.equal(workspaceConflicts, 1);
+        assert.deepEqual(snapshot(), before);
         const responses = await Promise.all(connected.map((client, index) => client.callTool({ name: 'nstdata_crawl_status', arguments: { crawlId: `existing-${index ? 'B' : 'A'}` } })));
         assert(responses[0].structuredContent?.pending === 1 && responses[1].structuredContent?.pending === 2);
         assert.deepEqual(business.sort(), ['A', 'B']);
