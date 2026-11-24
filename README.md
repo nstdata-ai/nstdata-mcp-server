@@ -15,6 +15,8 @@ Connect your AI assistant to Nstdata Crawl. Retrieve webpages as Markdown, colle
   <a href="https://github.com/nstdata-ai/nstdata-mcp-server/stargazers"><img src="https://img.shields.io/github/stars/nstdata-ai/nstdata-mcp-server?style=social" alt="GitHub stars"></a>
 </p>
 
+[![AllMCPs Verified](https://allmcps.com/api/badge/nstdata-mcp-server)](https://allmcps.com/mcp/nstdata-mcp-server?verify=1926e327-13de-4f27-bfc0-cd7f9fe0b5c0)
+
 <p align="center">
   <a href="https://app.nstdata.io/?utm_source=github&amp;utm_medium=social&amp;utm_campaign=mcp&amp;utm_content=readme"><img src="https://img.shields.io/badge/Dashboard-4F46E5?style=for-the-badge&amp;logo=googlechrome&amp;logoColor=white" alt="Dashboard"></a>
   <a href="https://docs.nstdata.io/docs/crawl/?utm_source=github&amp;utm_medium=social&amp;utm_campaign=mcp&amp;utm_content=readme"><img src="https://img.shields.io/badge/Crawl_API_Docs-2563EB?style=for-the-badge&amp;logo=readthedocs&amp;logoColor=white" alt="Crawl API documentation"></a>
