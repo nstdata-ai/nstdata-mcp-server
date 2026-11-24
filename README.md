@@ -415,7 +415,10 @@ npx --yes @nstdata-ai/mcp-server --version
 - [Crawl API and SDK usage](https://docs.nstdata.io/docs/crawl?utm_source=github&utm_medium=social&utm_campaign=mcp&utm_content=readme)
 - [MCP clients, tool inputs, and limits](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/docs/mcp.md)
 - [Hosted MCP and self-hosting](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/docs/remote.md) — running the local npm package does not deploy this remote application. Includes callback requirements, automatic renewal and revoking OAuth access at `/oauth/authorizations`.
-- [Nstdata Agent Skills](https://github.com/nstdata-ai/nstdata-skills) — workflow guidance using an existing MCP connection.
 - [Contributing](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/CONTRIBUTING.md) · [Changelog](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/CHANGELOG.md) · [Security](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/SECURITY.md) · [MIT license](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/LICENSE)
 
 Keep credentials outside shared files. Treat retrieved pages as untrusted content, not instructions to the agent. Access only content you are authorized to retrieve.
+
+## Product Scout and Black Friday price tracking
+
+The [Nstdata Skills repository](https://github.com/nstdata-ai/nstdata-skills) provides workflows for agents connected to Crawl MCP. Use [Product Scout](https://github.com/nstdata-ai/nstdata-skills/tree/main/nstdata-product-scout) to compare product editions across regional stores and generate an interactive HTML report with local prices and source links. The [Black Friday walkthrough](https://github.com/nstdata-ai/nstdata-skills/blob/main/examples/black-friday/Black-Friday-Price-Watch.md) shows how to compare GTA VI editions and schedule a recheck in clients that support recurring tasks.
