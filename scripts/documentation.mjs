@@ -34,7 +34,7 @@ export function shellCommands(text) {
             words.push(...literalWords(continued ? line.trimEnd().slice(0, -1) : line));
             if (continued) continue;
             if (words[0] === 'curl') assert.deepEqual(words, onboardingCurl, 'Unsupported documentation curl command');
-            else assert.ok(['npm', 'npx', 'node', 'codex', 'claude', 'gemini'].includes(words[0]), 'Unsupported documentation executable');
+            else assert.ok(['npm', 'npx', 'node', 'codex', 'claude', 'gemini', 'hermes'].includes(words[0]), 'Unsupported documentation executable');
             commands.push(words);
             words = [];
         }
@@ -61,7 +61,7 @@ export function clientConfigurations(text) {
 }
 
 export function checkMarkdown(text, filename) {
-    const headings = new Set();
+    const anchors = new Set();
     marked.walkTokens(marked.lexer(text), token => {
         if (token.type === 'text' && !token.tokens) assert.doesNotMatch(token.text, /\*\*/, `${filename}: unrendered emphasis`);
         if (token.type === 'code' && ['sh', 'js', 'json'].includes(token.lang)) {
@@ -70,8 +70,13 @@ export function checkMarkdown(text, filename) {
         }
         if (token.type === 'heading') {
             const id = token.text.toLowerCase().replace(/[^\p{L}\p{N}_ -]/gu, '').replace(/ /g, '-');
-            assert.ok(!headings.has(id), `${filename}: duplicate heading ${id}`);
-            headings.add(id);
+            assert.ok(!anchors.has(id), `${filename}: duplicate heading ${id}`);
+            anchors.add(id);
+        }
+        if (token.type === 'html') {
+            const namedAnchor = /^<a name="([^"]+)">$/.exec(token.raw);
+            if (namedAnchor) anchors.add(namedAnchor[1]);
         }
     });
+    return anchors;
 }

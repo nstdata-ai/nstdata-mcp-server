@@ -57,10 +57,14 @@ try {
     assert.equal(lock.packages['node_modules/@nstdata-ai/ip-lookup'], undefined);
     assert.equal(lock.packages['node_modules/@nstdata-ai/crawl'].version, manifest.dependencies['@nstdata-ai/crawl']);
     for (const file of ['README.md', 'README_zh.md']) {
-        const [onboarding, codexSetup] = shellCommands(fs.readFileSync(path.join(root, file), 'utf8'));
+        const commands = shellCommands(fs.readFileSync(path.join(root, file), 'utf8'));
+        const [onboarding, codexSetup] = commands;
         assert.deepEqual(onboarding, onboardingCurl);
         assert.deepEqual(codexSetup,
             ['codex', 'mcp', 'add', 'nstdata', '--url', 'https://mcp.nstdata.io/crawl']);
+        assert.deepEqual(commands.filter(([executable]) => executable === 'hermes'), [
+            ['hermes', 'mcp', 'add', 'nstdata-crawl', '--url', 'https://mcp.nstdata.io/crawl', '--auth', 'oauth'],
+        ], `${file}: expected one Hermes hosted Crawl setup command with OAuth`);
     }
     assert.ok(fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8').split('\n').includes(`## ${manifest.version}`), 'Missing version in changelog');
     assert.doesNotMatch(JSON.stringify(manifest) + JSON.stringify(lock), /file:|_planning/);
@@ -75,16 +79,15 @@ try {
         const content = fs.readFileSync(path.join(root, file.path), 'utf8');
         assert.doesNotMatch(content, /-----BEGIN (?:[A-Z]+ )*PRIVATE KEY-----|\bnpm_[a-zA-Z0-9]{30,}\b|\bgh[pousr]_[a-zA-Z0-9]{20,}\b|\/Users\/|_planning\//);
         if (!file.path.endsWith('.md')) continue;
-        checkMarkdown(content, file.path);
+        const anchors = checkMarkdown(content, file.path);
         for (const match of content.matchAll(/\[[^\]\n]+\]\(([^)\n]+)\)/g)) {
             if (/^[a-z]+:/i.test(match[1])) continue;
             const [relative, anchor] = match[1].split('#');
             const linked = path.posix.normalize(path.posix.join(path.posix.dirname(file.path), relative || path.posix.basename(file.path)));
             assert.ok(required.includes(linked), `Unpackaged documentation link: ${file.path} -> ${match[1]}`);
             if (anchor) {
-                const headings = [...fs.readFileSync(path.join(root, linked), 'utf8').matchAll(/^#+ (.+)$/gm)]
-                    .map(value => value[1].toLowerCase().replace(/[^\p{L}\p{N}_ -]/gu, '').replace(/ /g, '-'));
-                assert.ok(headings.includes(decodeURIComponent(anchor)), `Missing anchor: ${match[1]}`);
+                const targets = linked === file.path ? anchors : checkMarkdown(fs.readFileSync(path.join(root, linked), 'utf8'), linked);
+                assert.ok(targets.has(decodeURIComponent(anchor)), `Missing anchor: ${match[1]}`);
             }
         }
     }
