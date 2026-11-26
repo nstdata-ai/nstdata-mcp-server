@@ -78,6 +78,7 @@ View [Nstdata Crawl on Glama](https://glama.ai/mcp/connectors/io.nstdata/crawl).
 | Claude Code | Add the server in a terminal, then authorize through `/mcp`. |
 | Cursor | Install the [hosted Crawl plugin](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/plugins/nstdata-crawl/README.md) or use the remote JSON below. |
 | Claude web / desktop | Add a custom remote connector with the endpoint above. |
+| Hermes Agent | [Connect the hosted server, authorize in your browser, and scrape your first page](#hermes-agent). |
 | Other clients | Add a Streamable HTTP connection with OAuth or an `X-API-Key` header. Configuration fields vary by client. |
 
 Commands run in a terminal. JSON and TOML belong in configuration files. Natural-language requests go in the agent conversation. Choose one Nstdata Crawl connection for the session to avoid duplicate tools.
@@ -125,6 +126,26 @@ claude mcp add --transport http --scope user nstdata https://mcp.nstdata.io/craw
 Start Claude Code, enter `/mcp`, select `nstdata`, and follow the authorization flow. Enter your Nstdata API key on the Nstdata authorization page. Return to Claude Code and confirm the tools are available.
 
 The terminal command adds the server; it does not by itself complete authorization.
+
+</details>
+
+<a name="hermes-agent"></a>
+<details>
+<summary><strong>Hermes Agent</strong></summary>
+
+1. Run `hermes mcp list` on the machine where Hermes runs. If `nstdata-crawl` already points to this hosted endpoint, go to step 3. For a new connection, run:
+
+   ```sh
+   hermes mcp add nstdata-crawl --url https://mcp.nstdata.io/crawl --auth oauth
+   ```
+
+2. Follow the terminal prompt to open Nstdata in your browser. If the authorization page asks for a Crawl API key, use the key from **Prepare your account** above. Review the client and usage details and select **Authorize**. Back in the terminal, accept the tool selection to save the connection.
+3. Run `hermes mcp test nstdata-crawl`. Look for `Connected` and `Tools discovered: 6`, then run `hermes chat` to start a new conversation.
+4. Send this message in chat:
+
+   > Use nstdata-crawl to scrape https://example.org/ once. Return the page title, source URL, and Markdown body. If the task is pending, check the existing task. If you receive a markdownRef, read it through to the end. Report which step failed if you hit an error.
+
+   A successful result includes **Example Domain** and the page text. If authorization expires, run `hermes mcp login nstdata-crawl` and resume from the task ID or content reference you already have.
 
 </details>
 

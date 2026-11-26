@@ -74,6 +74,7 @@ https://mcp.nstdata.io/crawl
 | Claude Code | 执行 `claude mcp add --transport http --scope user nstdata https://mcp.nstdata.io/crawl`，然后通过 `/mcp` 授权。 |
 | Cursor | 安装[托管 Crawl 插件](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/plugins/nstdata-crawl/README.md)，或使用下方远程 JSON 配置。 |
 | Claude 网页／桌面端 | 添加自定义远程连接器，填写上述地址。 |
+| Hermes Agent | [添加托管服务、通过浏览器授权并抓取第一个网页](#hermes-agent)。 |
 | 其他客户端 | 添加 Streamable HTTP 服务，使用 OAuth 或 X-API-Key；配置字段以客户端要求为准。 |
 
 终端命令在系统终端执行；JSON／TOML 写入配置文件；抓取请求发送到 Agent 对话框。同一会话选择一个 Nstdata Crawl 连接，避免工具重复。
@@ -121,6 +122,26 @@ claude mcp add --transport http --scope user nstdata https://mcp.nstdata.io/craw
 启动 Claude Code，在会话中输入 `/mcp`，选择 `nstdata` 并发起授权。在 Nstdata 授权页输入 API Key，返回 Claude Code 确认工具可用。
 
 添加命令只保存连接配置，不代表已经完成授权。
+
+</details>
+
+<a name="hermes-agent"></a>
+<details>
+<summary><strong>Hermes Agent</strong></summary>
+
+1. 在安装 Hermes 的设备上运行 `hermes mcp list`。如果已有指向本托管地址的 `nstdata-crawl`，直接到第 3 步。首次接入在终端运行：
+
+   ```sh
+   hermes mcp add nstdata-crawl --url https://mcp.nstdata.io/crawl --auth oauth
+   ```
+
+2. 跟随终端提示，在浏览器打开 Nstdata 授权页。若页面要求 Crawl API Key，使用第一步「准备账号」中取得的 Key。确认客户端和用量说明，点击 **Authorize**。回到终端，在工具选择提示处按回车，启用发现的工具并保存。
+3. 运行 `hermes mcp test nstdata-crawl`。看到 `Connected` 和 `Tools discovered: 6` 后，运行 `hermes chat` 开启新对话。
+4. 在对话中发送：
+
+   > 用 nstdata-crawl 抓取 https://example.org/ ，只提交一次。返回页面标题、来源网址和 Markdown 正文。若任务在处理，查询已有任务；若返回 markdownRef，继续读取，直到正文完整。失败时说明停在哪一步。
+
+   成功时应能看到 **Example Domain** 和网页正文。若授权过期，运行 `hermes mcp login nstdata-crawl` 完成授权，再用已有任务 ID 或正文引用继续。
 
 </details>
 
