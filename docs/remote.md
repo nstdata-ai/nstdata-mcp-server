@@ -2,7 +2,7 @@
 
 [中文](remote_zh.md) · [Local client setup](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/README.md)
 
-Use the six Nstdata Crawl tools through a Streamable HTTP endpoint. Each user supplies their own Nstdata API key; Crawl calls use that user's credits and permissions. Proxy tools use the [local stdio server](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/README.md).
+Use the six Nstdata Crawl tools through a Streamable HTTP endpoint. Crawl tasks use the permissions and credits of the authorized workspace. Proxy tools use the [local stdio server](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/README.md).
 
 ## Connect a client
 
@@ -16,10 +16,13 @@ Connect to `https://mcp.nstdata.io/crawl` using a Streamable HTTP MCP client. No
 For OAuth:
 
 1. Add the URL as a Streamable HTTP MCP server and choose OAuth if the client asks for an authentication method. Leave any manual bearer token, bearer token environment variable, and authentication header fields empty.
-2. Open the authorization link, check the requesting application, and enter your API key from the [Nstdata dashboard](https://app.nstdata.io/).
-3. Select **Authorize**, return to the client, and confirm that the six `nstdata_crawl_*` tools are available.
+2. On the hosted Nstdata authorization page, sign in if prompted. Check the requesting client and the **Billing workspace** whose credits will be used for Crawl tasks. Select **Authorize and return**.
 
-The authorization page verifies your API key and asks for consent; it does not sign you into a Nstdata account. The application can renew the granted access until it expires or is revoked. Adding another device requires no server configuration or restart. Client interfaces and organization policies may differ; the client must support the selected authentication method.
+   To authorize with a key instead, select **Use an existing API Key**, enter your Crawl API key on the Nstdata authorization page, and select **Authorize**.
+
+3. Return to the client and confirm that the six `nstdata_crawl_*` tools are available.
+
+The client can renew its access until the grant expires or is revoked. On a self-hosted server, the authorization options depend on the deployment.
 
 See the [tool reference](mcp.md#tool-reference) and [workflows](mcp.md#workflows) for scraping, task resumption and reference reading.
 

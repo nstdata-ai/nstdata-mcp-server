@@ -47,7 +47,7 @@
 https://raw.githubusercontent.com/nstdata-ai/nstdata-skills/main/nstdata-mcp-onboarding/SKILL.md
 ```
 
-Agent 会在客户端支持的情况下帮你添加连接。浏览器弹出 OAuth 授权页后，输入你的 Nstdata API Key 并完成授权。[查看接入 Skill](https://github.com/nstdata-ai/nstdata-skills/blob/main/nstdata-mcp-onboarding/SKILL.md)。
+Agent 会在客户端支持的情况下帮你添加连接。在浏览器中用 Nstdata 账号完成授权即可。[查看接入 Skill](https://github.com/nstdata-ai/nstdata-skills/blob/main/nstdata-mcp-onboarding/SKILL.md)。
 
 **cURL · 查看接入说明。** 在终端运行下面的命令，会显示同一份 Skill。要开始接入，请把上面的 Prompt 发给 Agent。
 
@@ -57,7 +57,9 @@ curl -fsSL https://github.com/nstdata-ai/nstdata-skills/raw/main/nstdata-mcp-onb
 
 ### 第一步 准备账号
 
-从 [Nstdata 控制台](https://app.nstdata.io/?utm_source=github&utm_medium=social&utm_campaign=mcp&utm_content=readme)获取 **Nstdata API Key**，用于连接 MCP 和调用抓取服务。连接托管 MCP 时，在授权页面输入同一个 API Key 即可。请确保账号有可用额度。
+准备一个有 Crawl 权限的 Nstdata 账号。客户端打开授权页后，按提示登录，核对申请访问的应用和 **Billing workspace**（计费工作区），再点击 **Authorize and return** 返回客户端。抓取使用所选工作区的额度，账号授权全程无需填写 API Key。
+
+也可以选择 **Use an existing API Key**，在 Nstdata 授权页填写已有的 Crawl API Key，再点击 **Authorize**。 可在 [Nstdata 控制台](https://app.nstdata.io/?utm_source=github&utm_medium=social&utm_campaign=mcp&utm_content=readme) 获取 Key。
 
 ### 第二步 选择客户端
 
@@ -85,7 +87,7 @@ https://mcp.nstdata.io/crawl
 1. 打开 MCP 设置，或进入「插件 → 添加 → 添加 MCP 服务器」，具体名称随版本变化。
 2. 名称填 `nstdata`，类型选「流式 HTTP／Streamable HTTP」，地址填 `https://mcp.nstdata.io/crawl`。
 3. 保存，按提示重启连接，点击 Authenticate／授权。
-4. 在 Nstdata 授权页输入 API Key，点击 Authorize，返回 Codex 并新开对话。
+4. 在浏览器中按提示登录 Nstdata，确认计费工作区，点击 **Authorize and return**。返回 Codex 并新开对话。
 
 OAuth 模式下，手动 Bearer Token 和认证请求头留空。只安装桌面应用即可操作。
 
@@ -119,7 +121,7 @@ codex mcp login nstdata
 claude mcp add --transport http --scope user nstdata https://mcp.nstdata.io/crawl
 ```
 
-启动 Claude Code，在会话中输入 `/mcp`，选择 `nstdata` 并发起授权。在 Nstdata 授权页输入 API Key，返回 Claude Code 确认工具可用。
+启动 Claude Code，在会话中输入 `/mcp`，选择 `nstdata` 并发起授权。在浏览器中按提示登录 Nstdata，确认计费工作区，点击 **Authorize and return**。返回 Claude Code，确认工具可用。
 
 添加命令只保存连接配置，不代表已经完成授权。
 
@@ -135,7 +137,7 @@ claude mcp add --transport http --scope user nstdata https://mcp.nstdata.io/craw
    hermes mcp add nstdata-crawl --url https://mcp.nstdata.io/crawl --auth oauth
    ```
 
-2. 跟随终端提示，在浏览器打开 Nstdata 授权页。若页面要求 Crawl API Key，使用第一步「准备账号」中取得的 Key。确认客户端和用量说明，点击 **Authorize**。回到终端，在工具选择提示处按回车，启用发现的工具并保存。
+2. 打开 Hermes 终端给出的授权链接。在浏览器中按提示登录 Nstdata，确认计费工作区，点击 **Authorize and return**。回到终端，在工具选择提示处按回车，启用发现的工具并保存。
 3. 运行 `hermes mcp test nstdata-crawl`。看到 `Connected` 和 `Tools discovered: 6` 后，运行 `hermes chat` 开启新对话。
 4. 在对话中发送：
 
@@ -162,7 +164,7 @@ claude mcp add --transport http --scope user nstdata https://mcp.nstdata.io/craw
 }
 ```
 
-保存后进入 Cursor MCP 设置，找到 `nstdata` 并连接／授权。在授权页输入 Nstdata API Key，然后返回 Agent 对话。此 OAuth 配置不添加认证请求头。
+保存后进入 Cursor 的 MCP 设置，找到 `nstdata` 并发起连接。在浏览器中按提示登录 Nstdata，确认计费工作区，点击 **Authorize and return**。返回 Agent 对话。OAuth 配置中的认证请求头留空。
 
 </details>
 
@@ -404,8 +406,8 @@ http://DEMOCHANNEL001-residential_lite-country_AU-r_10m-s_demo01:DEMO_PASSWORD@g
 | 已添加或已授权，但对话没有工具 | 重新加载连接并新开对话，检查 MCP 启动错误；保存配置不代表连接成功。 |
 | OAuth 链接失效 | 从客户端重新发起授权，不复用旧浏览器链接。 |
 | 刷新失败或 invalid_scope | 重新授权；仍失败时反馈客户端版本及脱敏错误。支持请求头时可单独测试 API Key，保留已有任务引用。 |
-| Crawl 提示额度不足 | 为 API Key 对应的工作区充值，或联系该工作区的管理员。 |
-| Crawl 提示工作区不匹配 | 使用目标工作区的 API Key。使用 OAuth 时，用该 Key 重新授权。保留已有任务 ID 和结果引用。 |
+| Crawl 提示额度不足 | 检查账号授权时选择的工作区或 API Key 所属工作区的余额。 |
+| Crawl 提示工作区不匹配 | 重新授权时选择任务所属的工作区，或使用该工作区的 Key。保留已有任务 ID 和结果引用。 |
 | 本地进程无法启动 | 检查 Node.js 版本、客户端 PATH、npx 和必填环境变量。 |
 | 只返回任务 ID 或正文引用 | 查询原任务或读取引用，不为取得正文重新提交。 |
 | Proxy 返回 407 | 核对完整用户名、密码、通道状态及资源；状态码本身不能确定具体原因。 |

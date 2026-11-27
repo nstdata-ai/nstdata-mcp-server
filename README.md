@@ -49,7 +49,7 @@ Connect Nstdata Crawl MCP in this client using the instructions at
 https://raw.githubusercontent.com/nstdata-ai/nstdata-skills/main/nstdata-mcp-onboarding/SKILL.md
 ```
 
-The agent can register the connection where supported. When prompted, complete OAuth in your browser with your Nstdata API Key. [View the onboarding skill](https://github.com/nstdata-ai/nstdata-skills/blob/main/nstdata-mcp-onboarding/SKILL.md).
+The agent can add the connection where supported. Complete authorization in your browser with your Nstdata account. [View the onboarding skill](https://github.com/nstdata-ai/nstdata-skills/blob/main/nstdata-mcp-onboarding/SKILL.md).
 
 **cURL.** Run this in a terminal to read the same Skill. The command prints the setup instructions. To start setup, paste the Prompt above into your agent.
 
@@ -59,7 +59,9 @@ curl -fsSL https://github.com/nstdata-ai/nstdata-skills/raw/main/nstdata-mcp-onb
 
 ### 1. Prepare your account
 
-Get your **Nstdata API Key** from the [Nstdata dashboard](https://app.nstdata.io/?utm_source=github&utm_medium=social&utm_campaign=mcp&utm_content=readme) to connect to MCP and call the Crawl API. When connecting to hosted MCP, enter the same API key on the authorization page. Make sure your account has available credits.
+Use a Nstdata account with Crawl access. When your client opens the authorization page, sign in if prompted. Check the requesting app and the **Billing workspace** that will pay for Crawl tasks, then select **Authorize and return**. You can complete this flow without entering an API key.
+
+To authorize with a key instead, select **Use an existing API Key**, enter your Crawl API key on the Nstdata authorization page, and select **Authorize**. You can find your key in the [Nstdata dashboard](https://app.nstdata.io/?utm_source=github&utm_medium=social&utm_campaign=mcp&utm_content=readme).
 
 ### 2. Choose your client
 
@@ -89,7 +91,7 @@ Commands run in a terminal. JSON and TOML belong in configuration files. Natural
 1. Open MCP settings, or **Plugins → Add → Add MCP server**, depending on your app version.
 2. Set the name to `nstdata`, select **Streamable HTTP**, and enter `https://mcp.nstdata.io/crawl`.
 3. Save and restart the connection if prompted. Select **Authenticate** or the equivalent authorization action.
-4. Enter your Nstdata API key on the authorization page and select **Authorize**. Return to Codex and start a new conversation.
+4. Sign in to Nstdata if prompted, confirm the billing workspace, and select **Authorize and return**. Back in Codex, start a new conversation.
 
 For OAuth, leave manual bearer-token fields and authentication headers empty. Installing Codex CLI is not required.
 
@@ -123,7 +125,7 @@ In a terminal with Claude Code installed:
 claude mcp add --transport http --scope user nstdata https://mcp.nstdata.io/crawl
 ```
 
-Start Claude Code, enter `/mcp`, select `nstdata`, and follow the authorization flow. Enter your Nstdata API key on the Nstdata authorization page. Return to Claude Code and confirm the tools are available.
+Start Claude Code, enter `/mcp`, select `nstdata`, and start authorization. Sign in to Nstdata if prompted, confirm the billing workspace, and select **Authorize and return**. Return to Claude Code and check that the tools are available.
 
 The terminal command adds the server; it does not by itself complete authorization.
 
@@ -139,7 +141,7 @@ The terminal command adds the server; it does not by itself complete authorizati
    hermes mcp add nstdata-crawl --url https://mcp.nstdata.io/crawl --auth oauth
    ```
 
-2. Follow the terminal prompt to open Nstdata in your browser. If the authorization page asks for a Crawl API key, use the key from **Prepare your account** above. Review the client and usage details and select **Authorize**. Back in the terminal, accept the tool selection to save the connection.
+2. Open the authorization link from Hermes. Sign in to Nstdata if prompted, confirm the billing workspace, and select **Authorize and return**. Back in the terminal, accept the tool selection to save the connection.
 3. Run `hermes mcp test nstdata-crawl`. Look for `Connected` and `Tools discovered: 6`, then run `hermes chat` to start a new conversation.
 4. Send this message in chat:
 
@@ -166,7 +168,7 @@ To install the hosted plugin, open **Add Marketplace → Import from GitHub** in
 }
 ```
 
-Save, open Cursor's MCP settings, and connect or authenticate `nstdata`. Enter your Nstdata API key on the authorization page, then return to an Agent conversation. Do not add authentication headers to this OAuth configuration.
+Save the configuration, open Cursor’s MCP settings, and connect `nstdata`. Sign in to Nstdata if prompted, confirm the billing workspace, and select **Authorize and return**. Return to an Agent chat. Leave authentication headers empty for OAuth.
 
 </details>
 
@@ -408,8 +410,8 @@ Tools do not automatically retry, poll, or read references. The agent can make f
 | Added or authorized, but no tools in the conversation | Reload the connection and start a new conversation. Inspect MCP startup errors; saved configuration is not proof of a working connection. |
 | OAuth link expired | Start a fresh authorization from the client rather than reusing the old browser link. |
 | OAuth refresh fails / `invalid_scope` | Reauthorize; if it persists, report the client version and sanitized error. Where supported, test X-API-Key separately. Preserve existing task references. |
-| Crawl reports insufficient credits | Add credits to the workspace associated with your API key, or contact its administrator. |
-| Crawl reports a workspace mismatch | Use an API key for the intended workspace. For OAuth, reauthorize with that key. Keep existing task IDs and result references. |
+| Crawl reports insufficient credits | Check the balance of the workspace selected during account authorization or associated with your API key. |
+| Crawl reports a workspace mismatch | Reconnect with the workspace that owns the task, or use a key for that workspace. Keep existing task IDs and result references. |
 | Local process cannot start | Check Node.js version, the client's PATH, `npx`, and required environment variables. |
 | Only a task ID or content reference is returned | Query the original task or read the reference; do not submit again to obtain the body. |
 | Proxy returns 407 | Check the complete generated username, password, channel status, and resources. The status alone does not identify the cause. |

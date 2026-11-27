@@ -362,7 +362,7 @@ Proxy 专用变量见 [proxy_zh.md](proxy_zh.md)。未启用的模块不要求�
 | 错误码 | 含义与处理 |
 |---|---|
 | `AUTHORIZATION_FAILED` | HTTP／业务码401或403；检查凭据与权限 |
-| `CRAWL_WORKSPACE_MISMATCH` | HTTP 409。使用目标工作区的 API Key。使用 OAuth 时，用该 Key 重新授权。保留已有任务 ID 和结果引用。 |
+| `CRAWL_WORKSPACE_MISMATCH` | HTTP 409。重新授权时选择任务所属的工作区，或使用该工作区的 API Key。保留任务 ID 和结果引用。 |
 | `RATE_LIMITED` | HTTP／业务码429；停止并核对服务限制 |
 | `UPSTREAM_ERROR` | 请求／响应失败；statusCode 与 apiCode 独立；3xx 表示拒绝重定向 |
 | `TIMEOUT`、`CANCELLED` | 本地等待停止，已提交任务可能仍在执行 |
@@ -371,7 +371,7 @@ Proxy 专用变量见 [proxy_zh.md](proxy_zh.md)。未启用的模块不要求�
 | `OUTPUT_LIMIT` | 序列化输出超限；减小页／分块，或使用实际 recovery 标识 |
 | `SENSITIVE_OUTPUT` | 配置凭据命中字段名、二进制或不透明标识，结果被隐藏 |
 
-`UPSTREAM_ERROR` 且 `statusCode: 402` 表示额度不足。请为 API Key 对应的工作区充值，或联系该工作区的管理员。
+`UPSTREAM_ERROR` 且 `statusCode: 402` 表示额度不足。检查授权工作区的余额，或联系该工作区的管理员。
 
 所有请求均不自动重试。提交时发生连接失败、服务端错误或响应无法读取／超限，可能在没有收到 ID 时已创建任务。错误会说明结果未知；先查服务任务历史，不能直接重提。异步确认必须包含可供查询工具接受的 ID；缺失或不可用时也属于未知结果。明确任务失败、无诊断 ID 的同步内容及认证／限流拒绝分别处理。
 

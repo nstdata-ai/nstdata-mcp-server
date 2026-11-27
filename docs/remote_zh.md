@@ -2,7 +2,7 @@
 
 [English](remote.md) · [本地客户端接入](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/README_zh.md)
 
-通过 Streamable HTTP 入口使用六个 Nstdata Crawl 工具。每位用户提供自己的 Nstdata API Key，Crawl 调用使用该用户的权限和额度。Proxy 工具使用[本地 stdio 服务](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/README_zh.md)。
+通过 Streamable HTTP 使用六个 Nstdata Crawl 工具。抓取任务使用已授权工作区的权限和额度。Proxy 工具使用[本地 stdio 服务](https://github.com/nstdata-ai/nstdata-mcp-server/blob/main/README_zh.md)。
 
 ## 客户端接入
 
@@ -16,10 +16,13 @@
 使用 OAuth：
 
 1. 将地址添加为 Streamable HTTP MCP 服务；若客户端询问认证方式，选择 OAuth。若有手动 Bearer token、其环境变量或认证请求头字段，将其留空。
-2. 打开授权链接，核对请求授权的应用，输入从 [Nstdata 控制台](https://app.nstdata.io/)获取的 API Key。
-3. 点击 **Authorize**，返回客户端，确认可以发现六个 `nstdata_crawl_*` 工具。
+2. 打开官方托管服务的授权页，按提示登录 Nstdata。核对申请访问的客户端和 **Billing workspace**（计费工作区），点击 **Authorize and return**。抓取任务将使用所选工作区的额度。
 
-授权页校验 API Key 并征求同意，不执行 Nstdata 账户登录。应用可在授权到期或被撤销前续期访问。新增设备不需要修改服务器配置或重启服务。各客户端的界面和组织策略可能不同，需支持所选认证方式。
+   也可以选择 **Use an existing API Key**，在 Nstdata 授权页填写已有的 Crawl API Key，再点击 **Authorize**。
+
+3. 返回客户端，确认可以发现六个 `nstdata_crawl_*` 工具。
+
+客户端可在授权到期或被撤销前续期访问。自行部署时，可选的授权方式取决于该部署的配置。
 
 抓取、任务接续和引用读取方法见[工具参考](mcp_zh.md#工具参考)与[使用流程](mcp_zh.md#使用流程)。
 
