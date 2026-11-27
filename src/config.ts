@@ -4,7 +4,10 @@ import { isAbsolute } from 'node:path';
 export const DEFAULT_PROXY_CHECK_URL = 'https://example.com/';
 
 const configuration = z.strictObject({
-    apiToken: z.string().trim().min(1).optional(),
+    // The Crawl SDK sends the token as an x-api-key header value; reject values it cannot send.
+    apiToken: z.string().trim().min(1).refine(value => {
+        try { new Headers({ 'x-api-key': value }); return true; } catch { return false; }
+    }).optional(),
     baseURL: z.url().refine(value => {
         try {
             const url = new URL(value);

@@ -48,7 +48,7 @@ test('environment configuration errors identify every invalid variable together'
 });
 
 test('Crawl requires a nonblank canonical token and Proxy-only configuration needs none', () => {
-    for (const token of [undefined, '', '  \t  ']) {
+    for (const token of [undefined, '', '  \t  ', 'fixture-private\ntoken', 'fixture\x00private', 'fixture-private-🔑-token']) {
         assert.throws(() => loadConfig({ NSTDATA_API_TOKEN: token }), rejected(['NSTDATA_API_TOKEN']));
     }
     const config = loadConfig({ NSTDATA_MODULES: 'proxy', NSTDATA_API_TOKEN: '',
@@ -111,6 +111,7 @@ test('CLI reports missing or invalid environment variables on stderr before MCP 
     for (const [name, env, fields] of [
         ['missing token', {}, ['NSTDATA_API_TOKEN']],
         ['blank token', { NSTDATA_API_TOKEN: '   ' }, ['NSTDATA_API_TOKEN']],
+        ['unusable token', { NSTDATA_API_TOKEN: 'fixture-private\ntoken' }, ['NSTDATA_API_TOKEN']],
         ['invalid URL', { NSTDATA_API_TOKEN: validEnv.NSTDATA_API_TOKEN, NSTDATA_API_BASE_URL: invalidFields[1][2] }, ['NSTDATA_API_BASE_URL']],
         ['combined invalid fields', Object.fromEntries(invalidFields.map(([variable, , value]) => [variable, value])), invalidFields.map(([variable]) => variable)],
     ]) {

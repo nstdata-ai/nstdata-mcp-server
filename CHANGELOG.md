@@ -5,6 +5,7 @@
 ### Credential handling
 
 - Keep proxy credentials shorter than four characters from withholding ordinary Crawl and Proxy results as embedded credentials; plain value redaction still applies them.
+- Reject Crawl tokens that cannot be sent as an `x-api-key` header value, reporting `NSTDATA_API_TOKEN` by name at startup.
 
 ### Tool metadata
 
