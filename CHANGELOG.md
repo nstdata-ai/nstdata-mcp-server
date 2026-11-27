@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Credential handling
+
+- Keep proxy credentials shorter than four characters from withholding ordinary Crawl and Proxy results as embedded credentials; plain value redaction still applies them.
+
 ### Tool metadata
 
 - Add readable titles and explicit safety hints to tool discovery for Remote clients.

@@ -21,6 +21,10 @@ export function configuredSecrets(config: Config): string[] {
 
 export function boundResult(result: CallToolResult, config: Config): CallToolResult {
     const knownSecrets = configuredSecrets(config);
+    // Fragments shorter than four characters also occur inside ordinary field names, opaque
+    // references and binary bytes, so treating them as embedded credentials would withhold
+    // nearly every result. Plain value redaction still applies every configured secret.
+    const embeddedSecrets = knownSecrets.filter(secret => secret.length >= 4);
     const redact = (value: string) => knownSecrets.reduce((text, secret) => text.replaceAll(secret, '<REDACTED>'), value);
     const original = (result.structuredContent ?? {}) as Record<string, unknown>;
     const literalFields = new Set(['encoding', 'format', 'unit', 'status']);
@@ -28,18 +32,20 @@ export function boundResult(result: CallToolResult, config: Config): CallToolRes
     const opaqueFields = new Set(['encoding', 'format', 'unit', 'status', 'id', 'taskId', 'crawlId', 'ref', 'markdownRef', 'htmlRef', 'pdfRef', 'screenshotRef', 'rawDataRef', 'nextCursor', 'prevCursor', 'errorCode']);
     let sensitive = false;
     const text = JSON.stringify(original, function (key, value: unknown) {
-        if (!(this[inlineBinary] === true && (key === 'encoding' || key === 'base64')) && knownSecrets.some(secret => key.includes(secret))) sensitive = true;
+        if (!(this[inlineBinary] === true && (key === 'encoding' || key === 'base64')) && embeddedSecrets.some(secret => key.includes(secret))) sensitive = true;
         if (typeof value !== 'string') return value;
         if (this === original && literalFields.has(key) && literals.has(value)) return value;
         if (this[inlineBinary] === true && key === 'encoding') return value;
         if ((this === original || this[inlineBinary] === true) && this.encoding === 'base64' && (key === 'body' || key === 'base64')) {
             const bytes = Buffer.from(value, 'base64');
-            if (knownSecrets.some(secret => bytes.includes(Buffer.from(secret)))) sensitive = true;
+            if (embeddedSecrets.some(secret => bytes.includes(Buffer.from(secret)))) sensitive = true;
             return value;
         }
-        const filtered = redact(value);
-        if (opaqueFields.has(key) && filtered !== value) { sensitive = true; return value; }
-        return filtered;
+        if (opaqueFields.has(key)) {
+            if (embeddedSecrets.some(secret => value.includes(secret))) sensitive = true;
+            return value;
+        }
+        return redact(value);
     });
     if (sensitive) {
         const output = { error: { code: 'SENSITIVE_OUTPUT', message: 'A result containing configured credentials was withheld to preserve its structure and bytes.' } };

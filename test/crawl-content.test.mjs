@@ -187,6 +187,25 @@ test('credential-bearing property names withhold results without renaming keys',
     assert.equal(h.requests.length, 3);
 });
 
+test('short proxy credentials do not withhold ordinary Crawl and Proxy results', { timeout: 10000 }, async t => {
+    const h = await harness(t, (req, res) => {
+        if (req.url.startsWith('/api/')) return json(res, envelope({ status: 'completed', success: true, data: { markdown: 'plain text', pdf: 'dw==' } }));
+        res.writeHead(200); res.end('abc');
+    }, origin => ({ NSTDATA_MODULES: 'crawl,proxy', NSTDATA_API_TOKEN: 'fixture-token',
+        NSTDATA_PROXY_URL: origin.replace('://', '://u:pw@') }), 'legacy', executable);
+    assert.equal((await h.client.listTools()).tools.length, 8);
+    const crawl = await h.client.callTool({ name: 'nstdata_crawl_scrape', arguments: { url: 'https://example.com' } });
+    assert.notEqual(crawl.isError, true);
+    assert.equal(crawl.structuredContent.data.markdown, 'plain text');
+    assert.deepEqual(crawl.structuredContent.data.pdf, { encoding: 'base64', base64: 'dw==' });
+    const proxy = await h.client.callTool({ name: 'nstdata_proxy_fetch', arguments: { url: 'http://target.invalid' } });
+    assert.notEqual(proxy.isError, true);
+    assert.equal(proxy.structuredContent.statusCode, 200);
+    assert.equal(proxy.structuredContent.body, 'abc');
+    assert.doesNotMatch(JSON.stringify(crawl) + JSON.stringify(proxy), /SENSITIVE_OUTPUT|REDACTED/);
+    assert.equal(h.stderr(), '');
+});
+
 test('invalid UTF-8 references fail as text and remain lossless as binary', { timeout: 10000 }, async t => {
     const bytes = Buffer.from([0x61, 0xff, 0x62]);
     const h = await harness(t, (_req, res) => res.end(bytes), {}, 'legacy', executable);
